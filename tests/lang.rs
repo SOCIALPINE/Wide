@@ -881,14 +881,49 @@ fn jit_mutual_calls_run_native() {
 
 #[cfg(feature = "jit")]
 #[test]
-fn jit_bool_return_falls_back() {
-    // Parity: a bool-returning function must NOT be JIT'd (native i64 would turn `true` into 1).
-    // This also guards the v0.37 hole fixed in v0.41 (`return a > b` was eligible and diverged).
-    let src = "fn is_pos(n) { return n > 0 }\nr = is_pos(5)";
+fn jit_bool_returns_run_native_with_exact_parity() {
+    // v0.55: bool-returning numeric functions compile natively; the machine 0/1 is re-wrapped into a
+    // wide Bool at dispatch — `true` stays `true`, never 1 (the v0.37 parity hole stays closed).
+    let src = "fn is_pos(n) { return n > 0 }\nr = is_pos(5)\nq = is_pos(-3)";
     let it = eval_program(src).unwrap();
-    assert_eq!(it.get("r").unwrap(), Value::Bool(true)); // tree-walker semantics preserved
+    assert_eq!(it.get("r").unwrap(), Value::Bool(true));
+    assert_eq!(it.get("q").unwrap(), Value::Bool(false));
     let msgs: Vec<String> = it.channel.records.iter().map(|r| r.msg.clone()).collect();
-    assert!(!msgs.iter().any(|m| m.contains("JIT compiled 'is_pos'")), "bool return must be ineligible: {:?}", msgs);
+    assert!(msgs.iter().any(|m| m.contains("JIT compiled 'is_pos'") && m.contains("bool result")), "bool fns compile now: {:?}", msgs);
+    assert!(msgs.iter().any(|m| m.contains("native (JIT) call 'is_pos'")), "and dispatch natively: {:?}", msgs);
+    // A bool result drives an `if` exactly like the interpreted one.
+    assert_eq!(val("fn is_pos(n) { return n > 0 }\nr = 0\nif is_pos(7) { r = 1 }", "r"), int(1));
+    // Mixed int/bool returns stay ineligible (the machine word would be ambiguous).
+    let m = "fn odd(n) { if n == 0 { return false }\nreturn 1 }\nx = odd(0)";
+    let it2 = eval_program(m).unwrap();
+    assert_eq!(it2.get("x").unwrap(), Value::Bool(false));
+    let msgs2: Vec<String> = it2.channel.records.iter().map(|r| r.msg.clone()).collect();
+    assert!(!msgs2.iter().any(|m| m.contains("JIT compiled 'odd'")), "mixed returns fall back: {:?}", msgs2);
+}
+
+#[cfg(feature = "jit")]
+#[test]
+fn jit_for_range_loops_run_native() {
+    // v0.55: `for i in lo..hi` compiles natively — including break/continue (continue must hit the
+    // increment, not the header, or the loop would never advance).
+    let src = "fn tri(n) {\n total = 0\n for i in 0..n {\n total = total + i\n }\n return total\n}\nr = tri(100)";
+    let it = eval_program(src).unwrap();
+    assert_eq!(it.get("r").unwrap(), int(4950));
+    let msgs: Vec<String> = it.channel.records.iter().map(|r| r.msg.clone()).collect();
+    assert!(msgs.iter().any(|m| m.contains("JIT compiled 'tri'")), "for-range fns compile: {:?}", msgs);
+    let cc = "fn f(n) {\n t = 0\n for i in 0..n {\n if i == 3 { continue }\n if i == 7 { break }\n t = t + i\n }\n return t\n}\nr = f(100)";
+    assert_eq!(val(cc, "r"), int(0 + 1 + 2 + 4 + 5 + 6));
+}
+
+#[cfg(feature = "jit")]
+#[test]
+fn jit_wide_arity_functions() {
+    // v0.55: up to 8 parameters.
+    let src = "fn sum6(a, b, c, d, e, f) { return a + b + c + d + e + f }\nr = sum6(1, 2, 3, 4, 5, 6)";
+    let it = eval_program(src).unwrap();
+    assert_eq!(it.get("r").unwrap(), int(21));
+    let msgs: Vec<String> = it.channel.records.iter().map(|r| r.msg.clone()).collect();
+    assert!(msgs.iter().any(|m| m.contains("native (JIT) call 'sum6'")), "arity-6 dispatches native: {:?}", msgs);
 }
 
 #[cfg(feature = "jit")]

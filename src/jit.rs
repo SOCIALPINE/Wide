@@ -52,17 +52,17 @@ fn join(a: Kind, b: Kind) -> Kind {
 /// Classify every function: I64 tried first (ints stay ints), then F64. The fixed point then drops
 /// functions whose calls leave the set, mismatch arity, or cross ABIs (analysis assumes callee ABI ==
 /// caller ABI). The caller must pre-filter builtin-shadowing names (builtins dispatch first).
-pub fn eligible_set(funcs: &[FnDef]) -> HashMap<String, Abi> {
+pub fn eligible_set(funcs: &[FnDef]) -> HashMap<String, (Abi, bool)> {
     let arities: HashMap<&str, usize> = funcs.iter().map(|(n, p, _)| (n.as_str(), p.len())).collect();
-    let mut set: HashMap<String, Abi> = HashMap::new();
+    let mut set: HashMap<String, (Abi, bool)> = HashMap::new();
     for (n, params, body) in funcs {
-        if params.len() > 4 {
+        if params.len() > 8 {
             continue;
         }
-        if classify(params, body, Abi::I64).is_some() {
-            set.insert(n.clone(), Abi::I64);
-        } else if classify(params, body, Abi::F64).is_some() {
-            set.insert(n.clone(), Abi::F64);
+        if let Some((_, ret_bool)) = classify(params, body, Abi::I64) {
+            set.insert(n.clone(), (Abi::I64, ret_bool));
+        } else if let Some((_, ret_bool)) = classify(params, body, Abi::F64) {
+            set.insert(n.clone(), (Abi::F64, ret_bool));
         }
     }
     let calls: HashMap<&str, Vec<(String, usize)>> = funcs
@@ -77,9 +77,11 @@ pub fn eligible_set(funcs: &[FnDef]) -> HashMap<String, Abi> {
         let drops: Vec<String> = set
             .keys()
             .filter(|name| {
-                let my_abi = set[name.as_str()];
+                let my_abi = set[name.as_str()].0;
                 calls[name.as_str()].iter().any(|(callee, argc)| {
-                    set.get(callee) != Some(&my_abi) || arities.get(callee.as_str()) != Some(argc)
+                    // callees must share the ABI and return a number (analysis assumed a numeric
+                    // result); a bool-returning callee is fine to *dispatch* but not to call natively.
+                    set.get(callee) != Some(&(my_abi, false)) || arities.get(callee.as_str()) != Some(argc)
                 })
             })
             .cloned()
@@ -93,17 +95,60 @@ pub fn eligible_set(funcs: &[FnDef]) -> HashMap<String, Abi> {
     }
 }
 
-/// Can this function compile with the given ABI? Returns its variable kinds when yes.
-/// (Calls are assumed to target same-ABI functions — the fixed point enforces it.)
-fn classify(params: &[String], body: &[Stmt], abi: Abi) -> Option<HashMap<String, Kind>> {
+/// Can this function compile with the given ABI? Returns its variable kinds and whether the result
+/// is a wide bool (machine 0/1, re-wrapped at dispatch — v0.55). Return kinds must be uniform:
+/// I64 → all Int or all Bool; F64 → all Float/Int (promoted). Calls are assumed to target same-ABI,
+/// number-returning functions — the fixed point enforces it.
+fn classify(params: &[String], body: &[Stmt], abi: Abi) -> Option<(HashMap<String, Kind>, bool)> {
     if !body.iter().all(stmt_ok) || !always_returns(body) {
         return None;
     }
     let kinds = var_kinds(params, body, abi);
-    if validate(body, &kinds, abi) {
-        Some(kinds)
-    } else {
-        None
+    if !validate(body, &kinds, abi) {
+        return None;
+    }
+    let mut rets = Vec::new();
+    collect_return_kinds(body, &kinds, abi, &mut rets);
+    let ret_bool = match abi {
+        Abi::I64 => {
+            if rets.iter().all(|k| *k == Kind::Int) {
+                false
+            } else if rets.iter().all(|k| *k == Kind::Bool) {
+                true
+            } else {
+                return None; // mixed int/bool returns — the machine word would be ambiguous
+            }
+        }
+        Abi::F64 => {
+            if rets.iter().all(|k| matches!(k, Kind::Int | Kind::Float)) {
+                false
+            } else {
+                return None; // bool returns stay on the I64 ABI (one transmute family per ABI)
+            }
+        }
+    };
+    Some((kinds, ret_bool))
+}
+
+fn collect_return_kinds(body: &[Stmt], vars: &HashMap<String, Kind>, abi: Abi, out: &mut Vec<Kind>) {
+    for s in body {
+        match s {
+            Stmt::Return(Some(e), _) => {
+                if let Some(k) = expr_kind(e, vars, abi) {
+                    out.push(k);
+                }
+            }
+            Stmt::If { branches, else_body, .. } => {
+                for (_, b) in branches {
+                    collect_return_kinds(b, vars, abi, out);
+                }
+                if let Some(b) = else_body {
+                    collect_return_kinds(b, vars, abi, out);
+                }
+            }
+            Stmt::While { body, .. } | Stmt::For { body, .. } => collect_return_kinds(body, vars, abi, out),
+            _ => {}
+        }
     }
 }
 
@@ -142,6 +187,14 @@ fn collect_assign_kinds(body: &[Stmt], vars: &mut HashMap<String, Kind>, abi: Ab
                 }
             }
             Stmt::While { body, .. } => collect_assign_kinds(body, vars, abi),
+            Stmt::For { var, body, .. } => {
+                let nk = match vars.get(var) {
+                    Some(prev) => join(*prev, Kind::Int),
+                    None => Kind::Int,
+                };
+                vars.insert(var.clone(), nk);
+                collect_assign_kinds(body, vars, abi);
+            }
             _ => {}
         }
     }
@@ -157,9 +210,9 @@ fn validate(body: &[Stmt], vars: &HashMap<String, Kind>, abi: Abi) -> bool {
             }
             Stmt::Expr(e) => expr_kind(e, vars, abi).is_some(),
             Stmt::Return(Some(e), _) => match (abi, expr_kind(e, vars, abi)) {
-                (Abi::I64, Some(Kind::Int)) => true,
+                (Abi::I64, Some(Kind::Int)) | (Abi::I64, Some(Kind::Bool)) => true, // bool re-wrapped at dispatch (v0.55)
                 (Abi::F64, Some(Kind::Float)) | (Abi::F64, Some(Kind::Int)) => true, // int promoted
-                _ => false, // a bool (or poison) return would come back as a raw machine word — divergent
+                _ => false,
             },
             Stmt::Return(None, _) => false, // bare return → Unit on the tree-walker, a number natively
             Stmt::If { branches, else_body, .. } => {
@@ -170,6 +223,11 @@ fn validate(body: &[Stmt], vars: &HashMap<String, Kind>, abi: Abi) -> bool {
             }
             Stmt::While { cond, body, .. } => {
                 expr_kind(cond, vars, abi) == Some(Kind::Bool) && validate(body, vars, abi)
+            }
+            Stmt::For { iter: Expr::Range(lo, hi, _), body, .. } => {
+                expr_kind(lo, vars, abi) == Some(Kind::Int)
+                    && expr_kind(hi, vars, abi) == Some(Kind::Int)
+                    && validate(body, vars, abi)
             }
             Stmt::Break(_) | Stmt::Continue(_) => true,
             _ => false,
@@ -235,6 +293,7 @@ fn stmt_ok(s: &Stmt) -> bool {
                 && else_body.as_ref().map_or(true, |b| b.iter().all(stmt_ok))
         }
         Stmt::While { cond, body, .. } => expr_ok(cond) && body.iter().all(stmt_ok),
+        Stmt::For { iter: Expr::Range(lo, hi, _), body, .. } => expr_ok(lo) && expr_ok(hi) && body.iter().all(stmt_ok),
         Stmt::Break(_) | Stmt::Continue(_) => true,
         _ => false,
     }
@@ -286,6 +345,11 @@ fn collect_calls(body: &[Stmt], into: &mut Vec<(String, usize)>) {
                 expr(cond, into);
                 collect_calls(body, into);
             }
+            Stmt::For { iter: Expr::Range(lo, hi, _), body, .. } => {
+                expr(lo, into);
+                expr(hi, into);
+                collect_calls(body, into);
+            }
             _ => {}
         }
     }
@@ -303,16 +367,22 @@ fn always_returns(body: &[Stmt]) -> bool {
     }
 }
 
-/// A JIT-compiled function: a raw native code pointer + its arity + ABI.
+/// A JIT-compiled function: a raw native code pointer + its arity + ABI (+ whether the i64 result
+/// means a wide bool — comparisons etc. return machine 0/1 and are re-wrapped at dispatch, v0.55).
 pub struct Compiled {
     ptr: *const u8,
     arity: usize,
     abi: Abi,
+    ret_bool: bool,
 }
 
 impl Compiled {
     pub fn abi(&self) -> Abi {
         self.abi
+    }
+
+    pub fn ret_bool(&self) -> bool {
+        self.ret_bool
     }
 
     /// Call an I64-ABI function with integer args (arities 0–4).
@@ -327,6 +397,10 @@ impl Compiled {
                 2 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64) -> i64>(self.ptr)(args[0], args[1])),
                 3 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64, i64) -> i64>(self.ptr)(args[0], args[1], args[2])),
                 4 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64, i64, i64) -> i64>(self.ptr)(args[0], args[1], args[2], args[3])),
+                5 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64, i64, i64, i64) -> i64>(self.ptr)(args[0], args[1], args[2], args[3], args[4])),
+                6 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64, i64, i64, i64, i64) -> i64>(self.ptr)(args[0], args[1], args[2], args[3], args[4], args[5])),
+                7 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64, i64, i64, i64, i64, i64) -> i64>(self.ptr)(args[0], args[1], args[2], args[3], args[4], args[5], args[6])),
+                8 => Some(std::mem::transmute::<_, extern "C" fn(i64, i64, i64, i64, i64, i64, i64, i64) -> i64>(self.ptr)(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])),
                 _ => None,
             }
         }
@@ -344,6 +418,10 @@ impl Compiled {
                 2 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64) -> f64>(self.ptr)(args[0], args[1])),
                 3 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64, f64) -> f64>(self.ptr)(args[0], args[1], args[2])),
                 4 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64, f64, f64) -> f64>(self.ptr)(args[0], args[1], args[2], args[3])),
+                5 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64, f64, f64, f64) -> f64>(self.ptr)(args[0], args[1], args[2], args[3], args[4])),
+                6 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64, f64, f64, f64, f64) -> f64>(self.ptr)(args[0], args[1], args[2], args[3], args[4], args[5])),
+                7 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64, f64, f64, f64, f64, f64) -> f64>(self.ptr)(args[0], args[1], args[2], args[3], args[4], args[5], args[6])),
+                8 => Some(std::mem::transmute::<_, extern "C" fn(f64, f64, f64, f64, f64, f64, f64, f64) -> f64>(self.ptr)(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])),
                 _ => None,
             }
         }
@@ -368,15 +446,15 @@ impl Jit {
     /// Compile a batch of numeric functions (arities 0–4) to native code. All functions are *declared*
     /// first so bodies can call each other (direct/mutual recursion), then each is defined, then the
     /// module is finalized once. `abis` must be the classification from `eligible_set`.
-    pub fn compile_batch(&mut self, funcs: &[FnDef], abis: &HashMap<String, Abi>) -> Result<Vec<(String, Compiled)>, String> {
+    pub fn compile_batch(&mut self, funcs: &[FnDef], abis: &HashMap<String, (Abi, bool)>) -> Result<Vec<(String, Compiled)>, String> {
         let cl_ty = |abi: Abi| if abi == Abi::I64 { types::I64 } else { types::F64 };
         // Phase 1 — declare every function (so calls can reference any of them).
         let mut ids: HashMap<String, FuncId> = HashMap::new();
         for (name, params, _) in funcs {
-            if params.len() > 4 {
-                return Err(format!("jit: '{}' arity > 4 not supported yet", name));
+            if params.len() > 8 {
+                return Err(format!("jit: '{}' arity > 8 not supported yet", name));
             }
-            let abi = abis[name.as_str()];
+            let (abi, _) = abis[name.as_str()];
             let mut sig = self.module.make_signature();
             for _ in params {
                 sig.params.push(AbiParam::new(cl_ty(abi)));
@@ -392,8 +470,8 @@ impl Jit {
         }
         // Phase 2 — define each body (calls resolve through the declared ids).
         for (name, params, body) in funcs {
-            let abi = abis[name.as_str()];
-            let kinds = classify(params, body, abi).ok_or_else(|| format!("jit: '{}' failed re-analysis", name))?;
+            let (abi, _) = abis[name.as_str()];
+            let (kinds, _) = classify(params, body, abi).ok_or_else(|| format!("jit: '{}' failed re-analysis", name))?;
             let mut sig = self.module.make_signature();
             for _ in params {
                 sig.params.push(AbiParam::new(cl_ty(abi)));
@@ -452,7 +530,8 @@ impl Jit {
         let mut out = Vec::with_capacity(funcs.len());
         for (name, params, _) in funcs {
             let ptr = self.module.get_finalized_function(ids[name]);
-            out.push((name.clone(), Compiled { ptr, arity: params.len(), abi: abis[name.as_str()] }));
+            let (abi, ret_bool) = abis[name.as_str()];
+            out.push((name.clone(), Compiled { ptr, arity: params.len(), abi, ret_bool }));
         }
         Ok(out)
     }
@@ -473,6 +552,10 @@ fn collect_names(body: &[Stmt], into: &mut Vec<String>) {
                 }
             }
             Stmt::While { body, .. } => collect_names(body, into),
+            Stmt::For { var, body, .. } => {
+                push_unique(into, var);
+                collect_names(body, into);
+            }
             _ => {}
         }
     }
@@ -535,6 +618,7 @@ impl Gen<'_> {
             }
             Stmt::If { branches, else_body, .. } => self.gen_if(branches, else_body),
             Stmt::While { cond, body, .. } => self.gen_while(cond, body),
+            Stmt::For { var, iter: Expr::Range(lo, hi, _), body, .. } => self.gen_for_range(var, lo, hi, body),
             Stmt::Break(_) => {
                 let exit = self.loops.last().unwrap().1;
                 self.b.ins().jump(exit, &[]);
@@ -594,6 +678,42 @@ impl Gen<'_> {
             self.b.ins().jump(header, &[]); // loop back
         }
         self.loops.pop();
+        self.b.switch_to_block(exit);
+        false
+    }
+
+    /// `for i in lo..hi { ... }` over integers (v0.55). The range bounds evaluate once; `continue`
+    /// jumps to the *increment* block (a plain header jump would skip `i += 1` and loop forever).
+    fn gen_for_range(&mut self, var: &str, lo: &Expr, hi: &Expr, body: &[Stmt]) -> bool {
+        let (lo_v, _) = self.expr(lo);
+        let (hi_v, _) = self.expr(hi);
+        let end_var = self.b.declare_var(types::I64);
+        self.b.def_var(end_var, hi_v);
+        let iv = self.vars[var];
+        self.b.def_var(iv, lo_v);
+        let header = self.b.create_block();
+        let body_blk = self.b.create_block();
+        let incr = self.b.create_block();
+        let exit = self.b.create_block();
+        self.b.ins().jump(header, &[]);
+        self.b.switch_to_block(header);
+        let cur = self.b.use_var(iv);
+        let end = self.b.use_var(end_var);
+        let c = self.b.ins().icmp(IntCC::SignedLessThan, cur, end);
+        self.b.ins().brif(c, body_blk, &[], exit, &[]);
+        self.b.switch_to_block(body_blk);
+        self.loops.push((incr, exit));
+        let term = self.stmts(body);
+        if !term {
+            self.b.ins().jump(incr, &[]);
+        }
+        self.loops.pop();
+        self.b.switch_to_block(incr);
+        let cur = self.b.use_var(iv);
+        let one = self.b.ins().iconst(types::I64, 1);
+        let next = self.b.ins().iadd(cur, one);
+        self.b.def_var(iv, next);
+        self.b.ins().jump(header, &[]);
         self.b.switch_to_block(exit);
         false
     }

@@ -903,7 +903,11 @@ impl Interp {
             if let Ok(compiled) = j.compile_batch(&chosen, &abis) {
                 for (name, c) in compiled {
                     let span = cands.iter().find(|(n, ..)| *n == name).map(|t| t.3).unwrap_or(Span { line: 0, col: 0 });
-                    let path = if c.abi() == crate::jit::Abi::I64 { "integer" } else { "float" };
+                    let path = match (c.abi(), c.ret_bool()) {
+                        (crate::jit::Abi::I64, true) => "integer, bool result",
+                        (crate::jit::Abi::I64, false) => "integer",
+                        (_, _) => "float",
+                    };
                     self.channel.info(span, format!("JIT compiled '{}' to native code ({} fast path)", name, path));
                     self.jit_fns.insert(name, c);
                 }
@@ -946,7 +950,7 @@ impl Interp {
                     if let Some(ints) = ints {
                         if let Some(r) = compiled.call(&ints) {
                             self.channel.info(span, format!("native (JIT) call '{}' — {} args", name, ints.len()));
-                            return Ok(Value::Int(r));
+                            return Ok(if compiled.ret_bool() { Value::Bool(r != 0) } else { Value::Int(r) });
                         }
                     }
                 }
