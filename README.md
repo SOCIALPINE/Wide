@@ -25,8 +25,9 @@ $ cargo run -- examples/borrow.wide
   zero false positives) → *guard* (runtime check) → *trust* (`@trust`, illuminated). Plus pointers
   with provenance, `raw.*` access that warns instead of blocking, and `@show provenance`.
 - **A JIT that makes "dynamic + native speed" real** — numeric functions (i64/f64, including
-  recursion) compile to actual machine code via Cranelift (`--features jit`):
-  fib(30) in **6 ms** vs 4,000 ms interpreted and 112 ms in Python ([BENCH.md](BENCH.md)).
+  recursion) compile to actual machine code via Cranelift (`--features jit`): fib(30) in **7 ms** —
+  19× faster than Python, within 3–7× of `rustc -O` / `gcc -O2`, ~900× its own interpreter
+  ([BENCH.md](BENCH.md) has the full table and the honest caveats).
 - **A see-through PyTorch** — tensors, broadcasting, autodiff (backprop tape), SGD/Adam, conv2d /
   maxpool2d / softmax — a CNN trains end to end. Static *shape checking* catches matmul mismatches
   and unifies symbolic dimensions (`fn layer(x: tensor[(B,K)], w: tensor[(K,N)])`) at compile time.
