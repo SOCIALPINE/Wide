@@ -344,6 +344,16 @@ static error naming the import you need.
 
 ## 11. Input and output
 
+### The stream contract
+
+stdout carries **only the program's own output** (print/cout). The banner, the illumination
+report, errors, and `--time` all go to stderr — so a grader or a pipeline can read clean answers:
+
+```bash
+wide prog.wide > answer.txt 2> illumination.txt   # output and illumination, separately
+wide --no-illum prog.wide                          # suppress the illumination report
+```
+
 ### Console
 
 ```

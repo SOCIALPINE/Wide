@@ -40,8 +40,13 @@ ARGUMENTS:
 OPTIONS:
     --vm            run on the bytecode VM backend (default: tree-walker)
     --time          print the execution time to stderr (excludes process startup)
+    --no-illum      suppress the illumination report
     -h, --help      show this help
     -V, --version   show the version
+
+STREAMS (grader/pipeline friendly):
+    stdout          the program's own output (print/cout) — nothing else
+    stderr          the banner, the illumination report (INFO:/WARN:), errors, --time
 
 The run sequence is always: static check -> run -> illumination report.
 Start with GUIDE.en.md (English) or GUIDE.ko.md (Korean); examples live in examples/.";
@@ -100,8 +105,8 @@ fn run_prog_vm(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(),
         return Err(format!("static check failed ({} errors) — not running", errors.len()));
     }
     let compiled = wide::compile::compile(prog)?;
-    println!("=== wide v{} (vm) · {} ===\n", env!("CARGO_PKG_VERSION"), name);
-    println!("— program output —");
+    // stdout carries ONLY the program's own output (grader/pipeline friendly, v0.56) — meta → stderr.
+    eprintln!("=== wide v{} (vm) · {} ===", env!("CARGO_PKG_VERSION"), name);
     let mut machine = wide::Vm::new();
     let runtime = machine.run(&compiled);
     report_illumination(source, &machine.channel);
@@ -134,8 +139,8 @@ fn run_prog(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(), St
         return Err(format!("static check failed ({} errors) — not running", errors.len()));
     }
 
-    println!("=== wide v{} · {} ===\n", env!("CARGO_PKG_VERSION"), name);
-    println!("— program output —");
+    // stdout carries ONLY the program's own output (grader/pipeline friendly, v0.56) — meta → stderr.
+    eprintln!("=== wide v{} · {} ===", env!("CARGO_PKG_VERSION"), name);
 
     let mut interp = Interp::new();
     let runtime = interp.run(prog);
@@ -147,11 +152,14 @@ fn run_prog(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(), St
 
 /// Illumination report — weaves INFO:/WARN: labels into the source lines.
 fn report_illumination(source: &str, ch: &wide::lumen::Channel) {
+    if std::env::args().any(|a| a == "--no-illum") {
+        return;
+    }
     let recs = &ch.records;
     if recs.is_empty() {
         return;
     }
-    println!("\n— illumination (visible-cost) —");
+    eprintln!("\n— illumination (visible-cost) —");
     let lines: Vec<&str> = source.lines().collect();
 
     let mut by_line: std::collections::BTreeMap<usize, Vec<&Lumen>> = Default::default();
@@ -161,20 +169,20 @@ fn report_illumination(source: &str, ch: &wide::lumen::Channel) {
 
     for (line, rs) in by_line {
         let src = lines.get(line - 1).copied().unwrap_or("").trim_end();
-        println!("{:>3} | {}", line, src);
+        eprintln!("{:>3} | {}", line, src);
         for r in rs {
             let (label, color) = match r.level {
                 Level::Info => ("INFO", "\x1b[36m"),
                 Level::Warn => ("WARN", "\x1b[33m"),
             };
             if r.count > 1 {
-                println!("    {}  {}: {} (× {})\x1b[0m", color, label, r.msg, r.count);
+                eprintln!("    {}  {}: {} (× {})\x1b[0m", color, label, r.msg, r.count);
             } else {
-                println!("    {}  {}: {}\x1b[0m", color, label, r.msg);
+                eprintln!("    {}  {}: {}\x1b[0m", color, label, r.msg);
             }
         }
     }
     if ch.truncated > 0 {
-        println!("    \x1b[33m  WARN: illumination truncated — {} further unique records were not stored\x1b[0m", ch.truncated);
+        eprintln!("    \x1b[33m  WARN: illumination truncated — {} further unique records were not stored\x1b[0m", ch.truncated);
     }
 }

@@ -1972,6 +1972,31 @@ fn class_errors() {
     assert_eq!(val("enum E { A(v) }\nx = match E::A(7) { E::A(v) => v, _ => 0 }", "x"), int(7));
 }
 
+// ---- v0.56: stream contract — stdout is the program's output only (grader/pipeline friendly) ----
+
+#[test]
+fn stdout_carries_only_program_output() {
+    // A grader must be able to read pure answers from stdout: the banner and the illumination
+    // report live on stderr. Verified against the real binary.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_wide"))
+        .arg("examples/hello.wide")
+        .output()
+        .expect("run the wide binary");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stdout.contains("INFO:") && !stdout.contains("===") && !stdout.contains("illumination"),
+        "stdout must be pure program output: {:?}", stdout);
+    assert!(stderr.contains("INFO:") && stderr.contains("==="), "meta goes to stderr: {:?}", stderr);
+    // --no-illum drops the report but keeps the banner.
+    let quiet = std::process::Command::new(env!("CARGO_BIN_EXE_wide"))
+        .args(["--no-illum", "examples/hello.wide"])
+        .output()
+        .expect("run the wide binary");
+    let qerr = String::from_utf8_lossy(&quiet.stderr);
+    assert!(!qerr.contains("INFO:"), "--no-illum suppresses the report: {:?}", qerr);
+    assert_eq!(String::from_utf8_lossy(&quiet.stdout), stdout, "program output unchanged");
+}
+
 // ---- v0.18: I/O (cout / cin) ----
 
 #[test]
