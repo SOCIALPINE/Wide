@@ -1,0 +1,29 @@
+# wide v0.2 — functions and recursion
+# run: cargo run -- examples/functions.wide
+
+# recursion — Fibonacci sequence
+fn fib(n) {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+for i in 0..10 {
+    print(fib(i))   # 0 1 1 2 3 5 8 13 21 34
+}
+
+# mutual recursion — definition order doesn't matter thanks to hoisting
+fn is_even(n) {
+    if n == 0 { return true }
+    return is_odd(n - 1)
+}
+fn is_odd(n) {
+    if n == 0 { return false }
+    return is_even(n - 1)
+}
+print(is_even(10))  # true
+print(is_odd(10))   # false
+
+# strings + accumulation
+fn greet(name) {
+    return "Hi, " + name + "!"
+}
+print(greet("wide"))

@@ -1,0 +1,20 @@
+# wide v0.1 example — visible-cost demo
+# run: cargo run -- examples/hello.wide
+
+# arithmetic
+a = 2
+b = 3
+print(a + b)        # 5
+print(a * b - 1)    # 5
+
+# array — stack, no hidden allocation (illuminated)
+xs = [10, 20, 30, 40]
+print(xs.sum())     # 100
+print(xs.len)       # 4
+
+# float arithmetic (int/float promotion)
+half = 1 / 2.0
+print(half)         # 0.5
+
+# map — heap (illuminated, what C++/Python hide)
+cache = map{}

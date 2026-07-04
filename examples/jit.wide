@@ -1,0 +1,64 @@
+# wide v0.37+0.41 example — Cranelift JIT (stage 3: real native code)
+# run (interpreter): cargo run -- examples/jit.wide
+# run (native JIT):  cargo run --features jit -- examples/jit.wide
+#
+# With --features jit, integer-only functions are compiled to actual machine code via Cranelift and
+# called natively. Since v0.41 JIT functions can call each other — direct and mutual recursion run
+# entirely in machine code (the eligible set is a fixed point over the whole program). The illumination
+# shows "JIT compiled ... to native code" and "native (JIT) call". Functions outside the subset
+# (floats, strings, collections, division, bool returns, calls to interpreter-only functions) stay on
+# the tree-walker — same result, transparently. The tree-walker remains the reference (DESIGN §2).
+
+# A hot integer loop — the canonical JIT win.
+fn sum_to(n) {
+    total = 0
+    i = 0
+    while i < n {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+# Branches + comparisons compile to native too.
+fn sign(n) {
+    if n < 0 { return 0 - 1 }
+    elif n > 0 { return 1 }
+    else { return 0 }
+}
+
+fn poly(x) { return x * x + 3 * x - 7 }
+
+# Recursion — the whole call tree runs as native code (v0.41). One "native (JIT) call" is
+# illuminated at the entry; the inner recursive calls are pure machine-code calls (that's the point).
+fn fib(n) {
+    if n < 2 { return n }
+    else { return fib(n - 1) + fib(n - 2) }
+}
+
+# Mutual recursion also qualifies — both functions are declared together, then defined (batch compile).
+# (They return 1/0 ints on purpose: bool-returning functions are ineligible — parity with the tree-walker.)
+fn even(n) {
+    if n == 0 { return 1 }
+    else { return odd(n - 1) }
+}
+fn odd(n) {
+    if n == 0 { return 0 }
+    else { return even(n - 1) }
+}
+
+# Float functions get their own F64 native path (v0.47) — int literals inside are promoted,
+# exactly like the tree-walker. Called with float args → native; with int args → interpreter.
+fn area(r) { return 3.5 * r * r }
+
+print(sum_to(100))    # 4950
+print(sign(0 - 9))    # -1
+print(sign(42))       # 1
+print(poly(10))       # 123
+print(fib(25))        # 75025 — native recursion
+print(even(10))       # 1
+print(area(2.0))      # 14 — native (float fast path)
+
+# A float argument falls back to the interpreter (eligible function, but not an integer call):
+print(poly(2.5))      # 6.75 — computed by the tree-walker
+print("jit ok")

@@ -1,0 +1,15 @@
+# wide v0.18 — I/O demo (cout / cin, C++ style)
+# run:  echo "5 7" | cargo run -- examples/io.wide
+#
+# cout << ...  : stream output, chained, no auto-space (use "\n" for a newline).
+# cin >> ...   : reads whitespace-delimited tokens, auto-splits into the variables,
+#                and auto-types each (integer→int, decimal→float, otherwise str).
+
+cout << "two numbers, please: "
+cin >> a >> b
+
+cout << a << " + " << b << " = " << a + b << "\n"
+cout << a << " * " << b << " = " << a * b << "\n"
+
+# auto-typing: an integer token becomes int, a decimal becomes float
+cout << "doubled: " << a * 2 << " and " << b / 2.0 << "\n"

@@ -1,0 +1,28 @@
+# wide v0.35 example — Adam optimizer (adaptive moment estimation)
+# run: cargo run -- examples/ai/adam.wide
+#
+# adam_step(w, lr) updates a parameter with bias-corrected first/second moment estimates
+# (β1=0.9, β2=0.999, ε=1e-8). The moment state (m, v, timestep) lives *inside the tensor*, so it
+# persists across steps for the same parameter — no manual state threading. This is the standard
+# optimizer for real neural nets; grad_step (plain SGD) remains available for comparison.
+
+import "std/ai"
+
+# Fit w so that x · w ≈ target. The true solution is w = [1; 2].
+x = tensor([[1, 2], [3, 4], [5, 6]])
+target = tensor([[5], [11], [17]])
+w = param([[0], [0]])
+
+step = 0
+while step < 400 {
+    diff = matmul(x, w) - target
+    loss = (diff * diff).mean()        # mean squared error
+    loss.backward()
+    adam_step(w, 0.3)                  # adaptive update; moment state kept in w
+    step = step + 1
+}
+
+print(matmul(x, w))    # ≈ target [5; 11; 17]
+final = matmul(x, w) - target
+print((final * final).mean())   # final loss ≈ 0 (converged from 145)
+print("adam ok")

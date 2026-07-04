@@ -1,0 +1,45 @@
+# wide v0.40 example — maxpool2d + a full CNN pipeline, trained end to end
+# run: cargo run -- examples/ai/cnn.wide
+#
+# maxpool2d(x, k) takes the max of each non-overlapping k×k window (stride k) — the classic CNN
+# downsampling op. Its backward routes the gradient to each window's argmax. Combined with v0.38-39
+# this completes the differentiable CNN chain:
+#     conv2d → relu → maxpool2d → reshape (flatten) → matmul (dense)
+# Trailing rows/cols that don't fill a window are dropped — illuminated, not hidden.
+
+import "std/ai"
+
+# --- pooling alone: 4×4 → 2×2, each output is its window's max ---
+x = tensor([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]])
+print(maxpool2d(x, 2))                 # [[6, 8], [14, 16]]
+
+# --- CNN classifier: separate vertical stripes from horizontal stripes ---
+v = tensor([[0, 9, 0, 9, 0], [0, 9, 0, 9, 0], [0, 9, 0, 9, 0], [0, 9, 0, 9, 0], [0, 9, 0, 9, 0]])
+h = tensor([[0, 0, 0, 0, 0], [9, 9, 9, 9, 9], [0, 0, 0, 0, 0], [9, 9, 9, 9, 9], [0, 0, 0, 0, 0]])
+
+k = param([[0.1, 0], [0, 0.1]])        # conv kernel     (learned)
+w = param([[0.1], [0.1], [0.1], [0.1]]) # dense weights   (learned)
+b = param([[0]])                        # dense bias      (learned — lets the logit go negative)
+
+fn logit(img, k, w, b) {
+    f = maxpool2d(relu(conv2d(img, k)), 2)     # (5,5) ⋆ (2,2) → (4,4) → pool → (2,2)
+    return matmul(f.reshape([1, 4]), w) + b    # flatten → dense → 1 logit
+}
+
+step = 0
+loss = tensor([0])
+while step < 150 {
+    pv = sigmoid(logit(v, k, w, b))            # want 1 (vertical)
+    ph = sigmoid(logit(h, k, w, b))            # want 0 (horizontal)
+    loss = ((tensor([[1]]) - pv) * (tensor([[1]]) - pv)).sum() + (ph * ph).sum()
+    loss.backward()
+    adam_step(k, 0.05)
+    adam_step(w, 0.05)
+    adam_step(b, 0.05)
+    step = step + 1
+}
+
+print(loss)                                    # ≈ 0.003 (from 0.5) — the CNN learned to separate them
+print(sigmoid(logit(v, k, w, b)))              # ≈ 0.9999 (vertical → 1)
+print(sigmoid(logit(h, k, w, b)))              # ≈ 0.06   (horizontal → 0)
+print("cnn ok")

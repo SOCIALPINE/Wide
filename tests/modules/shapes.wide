@@ -1,0 +1,5 @@
+# test fixture: shapes (depends on mathx)
+import "mathx.wide"
+
+struct Circle { r }
+fn circle_area(c) { return 3 * square(c.r) }

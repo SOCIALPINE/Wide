@@ -1,0 +1,73 @@
+# wide v0.4 — struct · enum · pattern matching
+# run: cargo run -- examples/types.wide
+
+# --- struct (mutable, reference semantics) ---
+struct Point { x, y }
+
+fn dist_sq(p) {
+    return p.x * p.x + p.y * p.y
+}
+p = Point { x: 3, y: 4 }
+print(dist_sq(p))           # 25
+p.x = 6
+print(p)                    # Point { x: 6, y: 4 }
+
+# --- enum + matching ---
+enum Shape { Circle(r) Rect(w, h) Dot }
+
+fn area(s) {
+    match s {
+        Shape::Circle(r) => { return 3 * r * r }
+        Shape::Rect(w, h) => { return w * h }
+        Shape::Dot => { return 0 }
+    }
+}
+print(area(Shape::Circle(5)))   # 75
+print(area(Shape::Rect(3, 4)))  # 12
+
+# --- recursive enum = linked list ---
+enum List { Cons(head, tail) Nil }
+
+fn length(lst) {
+    match lst {
+        List::Cons(h, t) => { return 1 + length(t) }
+        List::Nil => { return 0 }
+    }
+}
+xs = List::Cons(10, List::Cons(20, List::Cons(30, List::Nil)))
+print(length(xs))           # 3
+
+# --- mini expression interpreter = a miniature of the bootstrap ---
+# building a 'language' in wide: AST as enum, evaluation as match.
+enum Expr {
+    Num(n)
+    Add(a, b)
+    Mul(a, b)
+    Neg(a)
+}
+
+fn eval(e) {
+    match e {
+        Expr::Num(n) => { return n }
+        Expr::Add(a, b) => { return eval(a) + eval(b) }
+        Expr::Mul(a, b) => { return eval(a) * eval(b) }
+        Expr::Neg(a) => { return 0 - eval(a) }
+    }
+}
+
+# -(2 + 3) * 4  =  -20
+tree = Expr::Mul(Expr::Neg(Expr::Add(Expr::Num(2), Expr::Num(3))), Expr::Num(4))
+print(eval(tree))           # -20
+
+# --- struct pattern matching ---
+fn quadrant(pt) {
+    match pt {
+        Point { x: 0, y: 0 } => { return "origin" }
+        Point { x, y } => {
+            if x > 0 and y > 0 { return "quadrant 1" }
+            return "other"
+        }
+    }
+}
+print(quadrant(Point { x: 0, y: 0 }))   # origin
+print(quadrant(Point { x: 5, y: 5 }))   # quadrant 1

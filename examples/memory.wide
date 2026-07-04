@@ -1,0 +1,36 @@
+# wide v0.26 example — memory model: pointers, raw access, bounds illumination
+# run: cargo run -- examples/memory.wide
+#
+# wide's memory novelty: "a check that blocks vs a check that illuminates" (DESIGN §3.2).
+# Normal access is bounds-checked and *blocks* on violation. The `raw.*` namespace keeps the
+# provenance tracking ON but *illuminates* the risk instead of blocking — responsibility moves
+# to the caller. (Honesty §3.7: the interpreter has no real addresses, so the bounds
+# illumination is real, the silicon overrun is modeled — raw ops clamp to the live buffer.)
+
+src = [10, 20, 30, 40]
+dst = [0, 0, 0, 0]
+
+# --- pointers (v0.25): & takes an address, * dereferences. provenance is illuminated. ---
+p = &src[1]            # ptr → src[1] · extent 0..4
+print(*p)              # 20
+*p = 99                # checked write through the pointer
+print(src[1])          # 99
+
+# --- @show provenance: the tracked record is always inspectable (principle 5, §3.4) ---
+@show provenance p     # INFO: provenance: origin src · extent 0..4 · pointee [1] · alive true · access owner
+
+# --- raw read: within extent → INFO (safe), past extent → WARN (overrun, not blocked) ---
+ps = &src[0]
+print(raw.read(ps, 3)) # [10, 99, 30]      INFO: 3 elem ⊂ src.extent
+print(raw.read(ps, 6)) # [10, 99, 30, 40]  WARN: 6 elem > extent — clamped, overrun illuminated
+
+# --- raw memcpy: the canonical example. copy src→dst, bounds illuminated against both extents ---
+pd = &dst[0]
+raw.memcpy(pd, ps, 4)  # INFO: 4 elem ⊂ src.extent ∩ dst.extent — safe
+print(dst)             # [10, 99, 30, 40]  (clamped to index 0..4)
+
+raw.memcpy(pd, ps, 8)  # WARN: 8 elem > extent (4 avail) — 4 elem overrun possible
+
+# --- contrast: the checked path *blocks*, raw *illuminates*. ---
+# *(&src[9]) would error (blocked); raw.read past the end only warns and proceeds.
+print("done")

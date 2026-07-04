@@ -1,0 +1,110 @@
+# a recursive descent parser built in wide — tokens → AST, plus AST evaluation.
+# v0.6 improvement: match expressions + error handling (?). reports invalid input as an error-value instead of silently ignoring it.
+# v0.16 improvement: impl/methods — turns p_peek(p)/p_advance(p) free functions into p.peek()/p.advance() methods.
+
+import "lexer.wide"
+
+enum Ast {
+    Num(n)
+    Var(name)
+    Bin(op, left, right)   # op="+/-/*//", left·right = Ast (recursive)
+}
+
+# reference semantics → when a method updates self.pos, it's visible to the caller too.
+struct Parser { tokens, pos }
+
+impl Parser {
+    fn peek(self) { return self.tokens[self.pos] }
+    fn advance(self) {
+        t = self.tokens[self.pos]
+        self.pos = self.pos + 1
+        return t
+    }
+}
+
+fn is_op(tok, sym) {
+    return match tok {
+        Token::Op(o) => o == sym
+        _ => false
+    }
+}
+
+fn op_sym(tok) {
+    return match tok {
+        Token::Op(o) => o
+        _ => "?"
+    }
+}
+
+# expr := term (('+' | '-') term)*
+fn parse_expr(p) {
+    left = parse_term(p)?                  # ? — propagate sub-parse errors
+    while is_op(p.peek(), "+") or is_op(p.peek(), "-") {
+        op = op_sym(p.advance())
+        right = parse_term(p)?
+        left = Ast::Bin(op, left, right)
+    }
+    return left
+}
+
+# term := factor (('*' | '/') factor)*
+fn parse_term(p) {
+    left = parse_factor(p)?
+    while is_op(p.peek(), "*") or is_op(p.peek(), "/") {
+        op = op_sym(p.advance())
+        right = parse_factor(p)?
+        left = Ast::Bin(op, left, right)
+    }
+    return left
+}
+
+# factor := NUM | NAME | '(' expr ')'
+fn parse_factor(p) {
+    tok = p.advance()
+    return match tok {
+        Token::Num(n) => Ast::Num(n)
+        Token::Name(s) => Ast::Var(s)
+        Token::Op(o) => parse_paren(p, o)
+        Token::End => err("expected an expression but input ended")
+    }
+}
+
+fn parse_paren(p, o) {
+    if o == "(" {
+        inner = parse_expr(p)?
+        p.advance()         # consume ')'
+        return inner
+    }
+    return err("unexpected token: " + o)
+}
+
+# lex → parse entry point. result is an Ast or an error-value (no ? here → returns the error as a value).
+fn parse(src) {
+    p = Parser { tokens: lex(src), pos: 0 }
+    return parse_expr(p)
+}
+
+# AST to parenthesized notation (concise with a match expression)
+fn show_ast(node) {
+    return match node {
+        Ast::Num(n) => str(n)
+        Ast::Var(s) => s
+        Ast::Bin(op, l, r) => "(" + show_ast(l) + " " + op + " " + show_ast(r) + ")"
+    }
+}
+
+fn apply(op, a, b) {
+    if op == "+" { return a + b }
+    if op == "-" { return a - b }
+    if op == "*" { return a * b }
+    return a / b
+}
+
+# AST evaluation (match expression + helper)
+fn eval_ast(node) {
+    return match node {
+        Ast::Num(n) => n
+        Ast::Var(s) => 0
+        Ast::Bin(op, l, r) => apply(op, eval_ast(l), eval_ast(r))
+    }
+}

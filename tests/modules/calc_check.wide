@@ -1,0 +1,9 @@
+# test fixture: verifies the wide-built calculator (lex→parse→eval).
+# pulls in the real examples/selfhost/ module chain and stores results in variables.
+import "../../examples/selfhost/parser.wide"
+
+r1 = eval_ast(parse("2 + 3 * 4"))
+r2 = eval_ast(parse("2 + 3 * (4 - 1)"))
+r3 = eval_ast(parse("(1 + 2) * (3 + 4)"))
+r4 = eval_ast(parse("100 - 5 * 5 - 1"))
+tree = show_ast(parse("1 + 2 * 3"))

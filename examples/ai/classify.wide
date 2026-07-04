@@ -1,0 +1,32 @@
+# wide logistic regression — a binary classifier, trained with cross-entropy loss.
+# run: cargo run -- examples/ai/classify.wide
+#
+#   p = sigmoid(x @ w + b)                       # probability output
+#   BCE = -mean( y·log(p) + (1-y)·log(1-p) )     # binary cross-entropy
+# sigmoid·log·matmul·broadcast are all differentiable → autodiff for gradients, SGD updates.
+
+import "std/ai"
+
+x = tensor([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = tensor([[0], [0], [0], [1]])         # AND (linearly separable)
+
+w = param([[0], [0]])
+b = param([[0]])
+
+fn predict(inp) {
+    return sigmoid(matmul(inp, w) + b)
+}
+
+for step in 0..3000 {
+    p = predict(x)
+    loss = (y * log(p + 0.0001) + (1 - y) * log(1 - p + 0.0001)).mean() * -1
+    loss.backward()
+    grad_step(w, 0.5)
+    grad_step(b, 0.5)
+    if step / 750 * 750 == step {
+        print("step", step, " loss", loss.item())
+    }
+}
+
+print("predicted probabilities:", predict(x))   # → [low, low, low, high]
+print("target:      ", y)

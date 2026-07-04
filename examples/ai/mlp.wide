@@ -1,0 +1,40 @@
+# 2-layer MLP (relu hidden layer) — a real neural net built in wide, trained with autodiff.
+# run: cargo run -- examples/ai/mlp.wide
+#
+#   h = relu(x @ W1 + b1)      # hidden layer (broadcast bias + nonlinearity)
+#   y =      h  @ W2 + b2      # output layer
+# all differentiable — backward computes gradients for the 4 parameters and SGD updates them.
+
+import "std/ai"
+
+# data: AND gate
+x = tensor([[0, 0], [0, 1], [1, 0], [1, 1]])
+target = tensor([[0], [0], [0], [1]])
+
+# parameters (fixed initial values)
+W1 = param([[0.5, -0.3, 0.2], [0.1, 0.4, -0.2]])   # 2 → 3
+b1 = param([[0, 0, 0]])
+W2 = param([[0.4], [-0.3], [0.6]])                  # 3 → 1
+b2 = param([[0]])
+
+fn forward(inp) {
+    h = relu(matmul(inp, W1) + b1)
+    return matmul(h, W2) + b2
+}
+
+for step in 0..600 {
+    pred = forward(x)
+    diff = pred - target
+    loss = (diff * diff).sum()
+    loss.backward()
+    grad_step(W1, 0.05)
+    grad_step(b1, 0.05)
+    grad_step(W2, 0.05)
+    grad_step(b2, 0.05)
+    if step / 150 * 150 == step {
+        print("step", step, " loss", loss.item())
+    }
+}
+
+print("prediction:", forward(x))
+print("target:", target)

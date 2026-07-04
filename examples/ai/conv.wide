@@ -1,0 +1,34 @@
+# wide v0.39 example — conv2d (valid 2D convolution, differentiable)
+# run: cargo run -- examples/ai/conv.wide
+#
+# conv2d(x, k) slides kernel k over input x (valid padding, stride 1) — the core op of CNNs.
+# Honesty: like PyTorch, this is *cross-correlation* (the kernel is not flipped); for learned
+# kernels the distinction is immaterial. Every application illuminates output shape and FLOPs,
+# and the static shape checker knows out = in − kernel + 1 (a too-big kernel fails before run).
+
+import "std/ai"
+
+# --- feature detection: a vertical-edge (Sobel-like) kernel on a synthetic image ---
+# The image is dark (0) on the left half, bright (9) on the right → one vertical edge.
+img = tensor([[0, 0, 9, 9],
+              [0, 0, 9, 9],
+              [0, 0, 9, 9],
+              [0, 0, 9, 9]])    # multi-line literals work since v0.45 (newlines inside (…)/[…])
+edge = tensor([[1, -1], [1, -1]])      # responds where left column ≠ right column
+fmap = conv2d(img, edge)               # [4,4]⋆[2,2] → [3,3]
+print(fmap)                            # nonzero only at the edge column
+
+# --- learning a kernel: recover the edge filter from input/output pairs by gradient descent ---
+k = param([[0, 0], [0, 0]])
+target = conv2d(img, edge)             # what the true kernel produces
+step = 0
+while step < 200 {
+    diff = conv2d(img, k) - target
+    loss = (diff * diff).mean()
+    loss.backward()
+    adam_step(k, 0.1)
+    step = step + 1
+}
+final = conv2d(img, k) - target
+print((final * final).mean())          # ≈ 6e-8 (from 108) — the kernel was learned
+print("conv2d ok")

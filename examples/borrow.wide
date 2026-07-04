@@ -1,0 +1,70 @@
+# wide v0.27+0.48+0.49 example — the FULL borrow gradient: proof → guard → trust (&mut XOR &)
+# run: cargo run -- examples/borrow.wide
+#
+# The core borrow rule (DESIGN §3.3, D2): one `&mut` XOR many `&` — exclusive OR shared, never both.
+# wide enforces it on a *gradient*, and every tier is now real code:
+#   PROOF (v0.49)  — the compiler proves the claim safe → NO runtime guard, "cost 0" illuminated.
+#                    Definite straight-line conflicts are compile errors ("caught before run").
+#   GUARD (v0.27/48) — can't prove (the name escapes into a call/alias/closure)? → runtime guard.
+#   TRUST (v0.48)  — `@trust` turns checks off for one statement, WARN illuminated.
+# Conditional conflicts are never compile errors (they may not run — principle 6, zero false
+# positives); the runtime guard catches them if they do. Which tier you got is always illuminated.
+
+xs = [1, 2, 3]
+total = 0
+
+# Iterating holds a shared borrow of xs (illuminated: "shared borrow ... runtime guard").
+for x in xs {
+    total = total + x      # arithmetic — fine
+    print(xs[0])           # READING xs is a shared access — shared + shared is allowed
+}
+print(total)               # 6
+
+# Mutating a *different* array inside the loop is fine — only the iterated buffer is borrowed.
+out = []
+for x in xs {
+    out.push(x * 10)       # mutating `out`, not `xs` — no conflict
+}
+print(out)                 # [10, 20, 30]
+
+# The borrow is released when the loop ends, so this is fine again:
+xs.push(4)                 # exclusive access, no live shared borrow
+print(xs)                  # [1, 2, 3, 4]
+
+# --- The PROOF tier (v0.49): only reads in the region → proven, no guard at all ---
+quiet = [7, 8, 9]
+if true {
+    q = &quiet             # INFO: ... statically proven safe — cost 0 (no runtime guard)
+    print(q[0] + quiet.len)
+}
+
+# --- Explicit borrows (v0.48): claims live until the enclosing scope ends ---
+# (@show provenance keeps xs claims observable → guard tier, so the table is populated.)
+if true {
+    r = &xs                # INFO: shared borrow of xs (&) — runtime guard
+    print(r[0])            # reading through the borrow — fine
+    @show provenance xs    # access shared(1)
+}
+xs.push(5)                 # the claim died with its scope — mutation fine
+print(xs.len)              # 5
+
+if true {
+    m = &mut xs            # INFO: exclusive borrow (&mut) — nothing else may borrow now
+    m.push(6)              # mutation through the borrow
+    @show provenance xs    # access exclusive (&mut)
+}
+
+# --- The trust tier: checks off for one statement, illuminated as WARN ---
+if true {
+    r = &xs
+    @trust xs.push(7)      # WARN: @trust — responsibility moves to the writer
+}
+print(xs.len)              # 7
+
+# --- What would CONFLICT (kept as comments — each halts with an illuminated error) ---
+# for x in xs { xs.push(x) }   # mutation while shared-borrowed (iterator invalidation)
+# r = &xs
+# xs.push(9)                   # same conflict via an explicit shared claim
+# m = &mut xs
+# s = &xs                      # & while &mut — XOR violated
+print("done")

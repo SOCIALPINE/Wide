@@ -1,0 +1,25 @@
+# wide autodiff — a real training loop (gradient descent). "PyTorch where backprop is visible".
+# run: cargo run -- examples/ai/train.wide
+#
+# fit y = x @ w to the data. watch the loss shrink to 0 and w converge to the answer.
+# each step: forward → loss → backward (backprop) → grad_step (SGD). all illuminated.
+
+import "std/ai"
+
+x = tensor([[1, 2], [3, 4], [5, 6]])
+target = tensor([[8], [18], [28]])      # answer w = [[2],[3]]  (1·2+2·3=8 ...)
+
+w = param([[0], [0]])                   # start from 0
+
+for step in 0..60 {
+    pred = matmul(x, w)
+    diff = pred - target
+    loss = (diff * diff).sum()
+    loss.backward()
+    grad_step(w, 0.005)
+    if step / 15 * 15 == step {          # print every 15 steps
+        print("step", step, " loss", loss.item())
+    }
+}
+
+print("learned w:", w)                   # → converges near [[2],[3]]

@@ -1,0 +1,13 @@
+# first step toward self-hosting — wide tokenizes wide (subset) source.
+# run: cargo run -- examples/selfhost/main.wide
+
+import "lexer.wide"
+
+source = "total = 12 + foo * (3 - 1)"
+print(source)
+print("--- tokens ---")
+
+toks = lex(source)
+for t in toks {
+    print(show(t))
+}

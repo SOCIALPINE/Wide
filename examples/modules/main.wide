@@ -1,0 +1,13 @@
+# wide v0.5 — module/import demo
+# run: cargo run -- examples/modules/main.wide
+#
+# this app only imports geometry, but since geometry imports util,
+# util's square is also transitively visible (flat namespace).
+
+import "geometry.wide"
+
+origin = Point { x: 0, y: 0 }
+p = Point { x: 3, y: 4 }
+
+print(dist_sq(origin, p))   # 25
+print(square(7))            # 49  (util follows transitively)

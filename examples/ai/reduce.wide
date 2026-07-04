@@ -1,0 +1,28 @@
+# wide v0.34 example — axis-wise reduction (sum/mean over an axis), differentiable
+# run: cargo run -- examples/ai/reduce.wide
+#
+# .sum()/.mean() with no argument reduce to a scalar. With an axis argument they reduce along that
+# axis of a 2D tensor: axis 0 reduces rows (→ per-column), axis 1 reduces cols (→ per-row). Both are
+# differentiable — the gradient broadcasts back along the reduced axis (mean also divides by the count).
+# These are the building blocks of batch statistics and per-class sums in real models.
+
+import "std/ai"
+
+# A batch of 3 samples, 2 features each.
+batch = tensor([[1, 2], [3, 4], [5, 6]])   # shape (3, 2)
+
+print(batch.sum(0))    # per-feature sum over the batch  → [9, 12]
+print(batch.mean(0))   # per-feature mean (batch mean)   → [3, 4]
+print(batch.sum(1))    # per-sample sum                  → [3, 7, 11]
+
+# Differentiable: a column-mean loss, gradient flows back through the reduction.
+w = param([[2, 2], [2, 2], [2, 2]])   # (3, 2)
+loss = w.mean(0).sum()                # mean over rows, then total
+loss.backward()
+print(w.grad.sum())    # each grad = 1/3 (rows=3), 6 elems → 2
+
+# reshape: a differentiable view with a new shape (same data order) — e.g. flatten for a dense layer.
+flat = batch.reshape([6])     # (3, 2) → (6,)
+print(flat)                   # [1, 2, 3, 4, 5, 6]
+print(batch.reshape([2, 3]))  # (3, 2) → (2, 3)
+print("reduce ok")

@@ -1,0 +1,66 @@
+# wide v0.3 — data structures and algorithms
+# run: cargo run -- examples/algorithms.wide
+import "std/heap"   # heap() is a std module
+
+# --- stack (vector push/pop): parenthesis matching ---
+fn balanced(s) {
+    stack = []
+    for c in s {
+        if c == "(" {
+            stack.push(c)
+        } elif c == ")" {
+            if stack.len == 0 { return false }
+            stack.pop()
+        }
+    }
+    return stack.len == 0
+}
+print(balanced("(()())"))   # true
+print(balanced("(()"))      # false
+
+# --- queue (vector push/pop_front) ---
+q = []
+q.push("a")
+q.push("b")
+q.push("c")
+print(q.pop_front())        # a (FIFO)
+print(q.pop_front())        # b
+
+# --- min heap → heap sort ---
+fn heapsort(xs) {
+    h = heap()
+    for x in xs {
+        h.push(x)
+    }
+    out = []
+    while h.len > 0 {
+        out.push(h.pop())
+    }
+    return out
+}
+print(heapsort([5, 3, 8, 1, 9, 2]))   # [1, 2, 3, 5, 8, 9]
+
+# --- map: word frequency ---
+fn word_count(text) {
+    counts = map{}
+    for w in text.split(" ") {
+        if counts.contains(w) {
+            counts[w] = counts[w] + 1
+        } else {
+            counts[w] = 1
+        }
+    }
+    return counts
+}
+m = word_count("the cat the dog the bird")
+print(m["the"])             # 3
+print(m.keys())             # [bird, cat, dog, the]  (sorted keys)
+
+# --- builtins + strings ---
+print(hex(255))             # 0xff
+print(int("ff", 16))        # 255
+print("Hello, World".upper())   # HELLO, WORLD
+nums = [3, 1, 4, 1, 5, 9, 2, 6]
+nums.sort()
+print(nums)                 # [1, 1, 2, 3, 4, 5, 6, 9]
+print(min(nums[0], nums[1]))

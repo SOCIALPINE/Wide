@@ -1,0 +1,21 @@
+# mini calculator — a full lex → parse → eval pipeline built in wide.
+# v0.6: reports invalid input as an error-value (doesn't silently ignore it).
+# run: cargo run -- examples/selfhost/calc.wide
+
+import "parser.wide"
+
+fn run(src) {
+    ast = parse(src)
+    if is_err(ast) {
+        print(src + "   =>   ✗ error: " + err_msg(ast))
+    } else {
+        print(src + "   =>   " + show_ast(ast) + "  =  " + str(eval_ast(ast)))
+    }
+}
+
+run("2 + 3 * 4")
+run("2 + 3 * (4 - 1)")
+run("(1 + 2) * (3 + 4)")
+run("100 - 5 * 5 - 1")
+run("2 +")           # error: missing operand
+run("* 5")           # error: unexpected token

@@ -1,0 +1,54 @@
+# a lexer built in wide — wide (subset) source into tokens.
+# the first piece of self-hosting (stage 5): the language begins to handle itself.
+# v0.16 improvement: mutable string strbuf — turns `num = num + c` O(n²) accumulation into amortized O(1) append.
+
+import "chars.wide"
+
+enum Token {
+    Num(n)       # integer literal
+    Name(s)      # identifier
+    Op(sym)      # single-char operator/punctuation
+    End
+}
+
+fn lex(src) {
+    chars = src.chars()      # to a char array for O(1) indexing
+    n = chars.len
+    i = 0
+    tokens = []
+    while i < n {
+        c = chars[i]
+        if is_space(c) {
+            i = i + 1
+        } elif is_digit(c) {
+            num = strbuf()                          # mutable builder — amortized O(1) append
+            while i < n and is_digit(chars[i]) {   # 'and' short-circuits → bounds-safe
+                num.push(chars[i])
+                i = i + 1
+            }
+            tokens.push(Token::Num(int(num.str())))
+        } elif is_alpha(c) {
+            name = strbuf()
+            while i < n and is_alnum(chars[i]) {
+                name.push(chars[i])
+                i = i + 1
+            }
+            tokens.push(Token::Name(name.str()))
+        } else {
+            tokens.push(Token::Op(c))
+            i = i + 1
+        }
+    }
+    tokens.push(Token::End)
+    return tokens
+}
+
+# token to a human-readable string (destructured with match)
+fn show(tok) {
+    match tok {
+        Token::Num(n) => { return "Num(" + str(n) + ")" }
+        Token::Name(s) => { return "Name(" + s + ")" }
+        Token::Op(o) => { return "Op(" + o + ")" }
+        Token::End => { return "End" }
+    }
+}

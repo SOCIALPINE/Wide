@@ -1,0 +1,8 @@
+# wide neural net helpers — std layers stacked in wide on top of builtin tensor primitives (matmul etc).
+# core primitives are fast Rust (builtin), high-level composition is wide+import. (like PyTorch torch vs torch.nn)
+import "std/ai"
+
+fn linear(x, w) { return matmul(x, w) }
+
+# affine: x @ w * scale + shift  (all illuminated)
+fn affine(x, w, scale, shift) { return matmul(x, w) * scale + shift }

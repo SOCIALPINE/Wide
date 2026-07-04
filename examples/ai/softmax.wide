@@ -1,0 +1,33 @@
+# wide multi-class classification — train a 3-class classifier with softmax + cross-entropy.
+# run: cargo run -- examples/ai/softmax.wide
+#
+#   p = softmax(x @ W + b)                  # per-row probability distribution (classes sum to 1)
+#   NLL = -Σ( onehot · log(p) )             # cross-entropy (onehot masking + total sum)
+# softmax·log·matmul·broadcast are all differentiable → train with autodiff·SGD.
+
+# 3 features → 3 classes. feature i points to class i (separable).
+import "std/ai"
+
+x = tensor([[2, 0, 0], [0, 2, 0], [0, 0, 2], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
+target = tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
+
+W = param([[0, 0, 0], [0, 0, 0], [0, 0, 0]])
+b = param([[0, 0, 0]])
+
+fn forward(inp) {
+    return softmax(matmul(inp, W) + b)
+}
+
+for step in 0..400 {
+    p = forward(x)
+    loss = (target * log(p + 0.0001)).sum() * -1
+    loss.backward()
+    grad_step(W, 0.3)
+    grad_step(b, 0.3)
+    if step / 100 * 100 == step {
+        print("step", step, " loss", loss.item())
+    }
+}
+
+print("predicted probabilities (each row concentrates on the correct class):")
+print(forward(x))

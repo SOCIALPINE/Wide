@@ -1,0 +1,18 @@
+# wide parallel backend — real CPU multi-core matmul.
+# run: cargo run -- examples/ai/parallel.wide
+#
+# honest note: this is *real* parallel computation (threads) — not fake. large matrices split
+# output rows across as many threads as cores, and the illumination shows the backend as "cpu×N threads".
+# (the CPU realization of §4.2 parallel execution. a real GPU backend fits the same slot — for now it's CPU.)
+
+import "std/ai"
+
+# large matrix → multi-core
+a = ones([128, 128])
+b = ones([128, 128])
+c = matmul(a, b)
+print("128×128 result sum:", c.sum())     # 128³ = 2097152
+
+# small matrix → single thread (avoid thread overhead)
+small = matmul(tensor([[1, 2], [3, 4]]), tensor([[1, 0], [0, 1]]))
+print("small matrix sum:", small.sum())    # 10

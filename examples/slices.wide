@@ -1,0 +1,31 @@
+# wide v0.44 example — negative indexes + slices
+# run: cargo run -- examples/slices.wide      (identical on the VM: --vm)
+#
+# xs[-1] counts from the end (Python-style). xs[a..b] is a *copy* of the half-open range —
+# the copy is illuminated (principle 3), and bounds are strict (the checked path blocks;
+# for illuminated-not-blocked access, that's what `raw.*` is for — DESIGN §3.2).
+
+xs = [10, 20, 30, 40, 50]
+
+# --- negative indexes ---
+print(xs[-1])          # 50 (last)
+print(xs[-2])          # 40
+xs[-1] = 99
+print(xs)              # [10, 20, 30, 40, 99]
+
+# --- slices: [start..end), endpoints may be negative ---
+print(xs[1..3])        # [20, 30]        INFO: slice → new heap vector (copy)
+print(xs[0..-1])       # [10, 20, 30, 40] — everything but the last
+print(xs[2..2])        # [] (empty)
+
+# a slice is a copy — mutating it does not touch the source
+ys = xs[0..3]
+ys[0] = -1
+print(xs[0])           # 10 (unchanged)
+
+# --- strings slice too (by characters) ---
+s = "illuminate"
+print(s[0..5])         # illum
+print(s[-4..10])       # nate
+print(s[-1])           # e
+print("slices ok")

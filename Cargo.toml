@@ -1,0 +1,38 @@
+[package]
+name = "wide"
+version = "0.51.0"
+edition = "2021"
+description = "wide — illuminate, don't isolate. Tree-walking interpreter + bytecode VM (stage 2)."
+
+[features]
+# `ai` gates the tensor / autodiff / GPU-residency / parallel-matmul code so it can be
+# compiled OUT for a slim core build. Default builds include it (everything works out of the box);
+# `cargo build --no-default-features` yields the slim core interpreter.
+# (Honesty: with zero external deps the size win is small today — this is the scaffolding so a
+# future real GPU backend's heavy deps land behind `ai`.)
+default = ["ai"]
+ai = []
+# `jit` enables the Cranelift native backend (stage 3, DESIGN §2). Off by default — it pulls the
+# cranelift crates (the project's first external deps); the default/slim builds stay dependency-free.
+jit = ["dep:cranelift", "dep:cranelift-jit", "dep:cranelift-module"]
+# `gpu` enables the real GPU compute backend (wgpu, §4.3) — the second external dependency, off by
+# default. Requires `ai`. Without it the GPU residency/transfer *model* still works (CPU compute).
+gpu = ["ai", "dep:wgpu", "dep:pollster"]
+
+[dependencies]
+cranelift = { version = "0.133", optional = true }
+cranelift-jit = { version = "0.133", optional = true }
+cranelift-module = { version = "0.133", optional = true }
+wgpu = { version = "24", optional = true }
+pollster = { version = "0.4", optional = true }
+
+[lib]
+name = "wide"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wide"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3

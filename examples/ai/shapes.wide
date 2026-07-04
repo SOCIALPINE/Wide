@@ -1,0 +1,52 @@
+# wide v0.32 example — static shape checking (§4.1, increment 1: literal/known shapes)
+# run: cargo run -- examples/ai/shapes.wide
+#
+# wide tracks *statically known* tensor shapes through literal constructors and shape-preserving ops,
+# and catches matmul inner-dim and elementwise broadcast mismatches BEFORE the program runs — the
+# "literal" tier of the shape gradient (§4.1). Conservative: any shape it cannot determine (e.g. a
+# function parameter) is left unknown and skipped, so a valid program never trips it (principle 6).
+# The symbolic tier — `tensor[f32, (M, K)]` annotations with dimension-variable unification, where a
+# function is shape-polymorphic yet shape-safe — is the next increment.
+
+import "std/ai"
+
+# A two-layer forward pass with statically known shapes: the checker proves the dims line up.
+x = zeros([4, 8])       # (4, 8)
+w1 = zeros([8, 16])     # (8, 16)
+w2 = zeros([16, 2])     # (16, 2)
+
+h = relu(matmul(x, w1)) # (4, 8) x (8, 16) -> (4, 16), shape-preserving relu
+y = matmul(h, w2)       # (4, 16) x (16, 2) -> (4, 2)   — inner dims checked at compile time
+print(y.shape)          # [4, 2]
+
+# Elementwise broadcast is checked too: (4, 2) + (2,) broadcasts over rows — fine.
+b = zeros([2])
+out = y + b
+print(out.shape)        # [4, 2]
+
+# --- Symbolic tier (§4.1): shape annotations with dimension variables (v0.33) ---
+# Uppercase = symbolic dim (compile-time), lowercase = dynamic (runtime), ? = unknown.
+# A shared variable links shapes: the two K's below must agree, checked at compile time.
+a: tensor[(M, K)] = zeros([2, 3])     # binds M=2, K=3
+b: tensor[(K, N)] = zeros([3, 5])     # K must be 3 — consistent
+ab = matmul(a, b)                     # (M, N) = (2, 5), proven without knowing the values
+print(ab.shape)                       # [2, 5]
+
+# A dynamic batch with a static feature dim — matches real transformer shapes:
+emb: tensor[(?, 768)] = zeros([16, 768])   # batch is dynamic, 768 is static
+print(emb.shape)                      # [16, 768]
+
+# Shape-polymorphic function (v0.36): the two K's are the SAME variable, so a caller passing
+# mismatched inner dims is caught at the call site — compiled once, yet shape-safe (§4.1 secret weapon).
+fn layer(x: tensor[(B, K)], w: tensor[(K, N)]) {
+    return matmul(x, w)               # (B, K) · (K, N) → (B, N), inner K proven to agree
+}
+h1 = layer(zeros([4, 8]), zeros([8, 16]))   # B=4, K=8, N=16 → (4, 16)
+print(h1.shape)                       # [4, 16]
+# layer(zeros([4, 8]), zeros([9, 2]))  # error: layer: dimension variable K = 8 from one arg but 9 from another
+
+# --- What would be CAUGHT BEFORE RUNNING (kept as comments — they halt at the static check) ---
+# bad = matmul(x, w2)               # error: matmul dimension mismatch (4,8)·(16,2) — inner 8≠16
+# bad = y + zeros([3])              # error: tensor shape mismatch [4, 2] + [3] — not broadcastable
+# c: tensor[(K, N)] = zeros([4, 5]) # error: dimension variable K = 4 here, but it was 3 earlier
+print("shapes ok")

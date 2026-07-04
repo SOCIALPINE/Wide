@@ -1,0 +1,41 @@
+# wide v0.42 example — closures / first-class functions
+# run: cargo run -- examples/closures.wide
+#
+# Functions are values: anonymous `fn(x) { ... }` expressions, named functions referenced by name,
+# higher-order functions, and closures that capture their environment. Capture is *by value at
+# creation* — scalars are copied (illuminated), while collections/structs/tensors are reference
+# semantics as everywhere in wide, so a captured array stays shared. Honesty: mutating a captured
+# *scalar* inside a closure is per-call local (like Python without `nonlocal`).
+
+# --- lambdas and calls through variables ---
+add = fn(a, b) { return a + b }        # INFO: closure created · captures 0 var(s)
+print(add(2, 3))                       # 5
+
+# --- capture by value at creation ---
+k = 10
+addk = fn(x) { return x + k }          # captures k = 10 (by value)
+k = 99                                 # reassigning k later is NOT seen by the closure
+print(addk(1))                         # 11
+
+# --- captured collections are shared (reference semantics) ---
+xs = [1, 2]
+push3 = fn() { xs.push(3) }
+push3()
+print(xs)                              # [1, 2, 3] — the captured array is the same buffer
+
+# --- named functions as values, higher-order functions ---
+fn double(x) { return x * 2 }
+fn apply(f, v) { return f(v) }
+print(apply(double, 7))                # 14
+
+# --- closure factory: a function that makes functions ---
+fn make_adder(n) { return fn(x) { return x + n } }
+add5 = make_adder(5)
+print(add5(100))                       # 105
+
+# --- map / filter (new arrays; the source is untouched) ---
+nums = [1, 2, 3, 4, 5]
+print(nums.map(fn(x) { return x * x }))          # [1, 4, 9, 16, 25]
+print(nums.filter(fn(x) { return x > 2 }))       # [3, 4, 5]
+print(nums.map(double))                          # [2, 4, 6, 8, 10] — named fn works too
+print("closures ok")

@@ -1,0 +1,7 @@
+# character classification — the foundation of a wide-built lexer.
+# no builtin classification functions, so we implement them directly with string comparisons.
+
+fn is_digit(c) { return c >= "0" and c <= "9" }
+fn is_alpha(c) { return (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_" }
+fn is_alnum(c) { return is_alpha(c) or is_digit(c) }
+fn is_space(c) { return c == " " or c == "\t" or c == "\n" }

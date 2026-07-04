@@ -1,0 +1,3 @@
+# test fixture: math utils
+fn square(x) { return x * x }
+fn cube(x) { return x * x * x }

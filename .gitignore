@@ -1,0 +1,8 @@
+/target
+.claude/
+
+# internal working documents (kept local, not published)
+HANDOFF.md
+PRIOR-ART.md
+DESIGN.md
+SYNTAX.md

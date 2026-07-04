@@ -1,0 +1,24 @@
+# wide tensor — linear layer forward pass. "PyTorch you can see into".
+# run: cargo run -- examples/ai/main.wide
+#
+# the imported nn helpers (wide) run on top of builtin tensor primitives,
+# and every operation illuminates its cost (shape·FLOP·bytes·residency).
+
+import "nn.wide"
+
+# input batch (2 samples × 3 features)
+x = tensor([[1, 2, 3], [4, 5, 6]])
+
+# weights (3 inputs → 2 outputs)
+w = tensor([[1, 0], [0, 1], [1, 1]])
+
+# forward — matmul illuminates shape check + FLOPs
+h = linear(x, w)
+print(h)
+
+# affine transform (scale·shift, elementwise broadcast)
+y = affine(x, w, 2, 1)
+print(y)
+
+print("sum:", y.sum())
+print("mean:", y.mean())

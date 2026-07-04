@@ -1,0 +1,8 @@
+# geometry module — depends on util
+import "util.wide"
+
+struct Point { x, y }
+
+fn dist_sq(a, b) {
+    return square(a.x - b.x) + square(a.y - b.y)
+}

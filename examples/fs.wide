@@ -1,0 +1,39 @@
+# wide v0.43 example — file I/O (std/fs)
+# run: cargo run -- examples/fs.wide      (also works on the VM: --vm)
+#
+# I/O is a cost, so every read/write illuminates its byte count (principle 3: no hidden costs).
+# I/O failures are error-*values* (the Zig-style error union from v0.6) — handle them with
+# is_err()/err_msg() or propagate with `?`. The demo file cleans itself up at the end.
+
+import "std/fs"
+
+path = "fs_demo.tmp"
+
+# --- write / read roundtrip ---
+write_file(path, "alpha\nbeta\ngamma")   # INFO: fs write "fs_demo.tmp" · 16 B
+text = read_file(path)                   # INFO: fs read · 16 B
+print(text.len)                          # 16
+
+# --- line-oriented reading ---
+lines = read_lines(path)
+print(lines.len)                         # 3
+print(lines[1])                          # beta
+
+# --- append ---
+append_file(path, "\ndelta")
+print(read_lines(path).len)              # 4
+
+# --- errors are values: ? propagates, is_err checks ---
+fn load(p) {
+    s = read_file(p)?                    # on failure, return the error to the caller
+    return s.len
+}
+print(load(path))                        # 22
+missing = load("no_such_file.xyz")
+print(is_err(missing))                   # true
+print(err_msg(missing))                  # read_file "no_such_file.xyz": ... (os message)
+
+# --- cleanup ---
+remove_file(path)                        # INFO: fs remove
+print(file_exists(path))                 # false
+print("fs ok")

@@ -1,0 +1,7 @@
+# test fixture: app — imports both shapes and mathx (diamond → mathx loaded only once)
+import "shapes.wide"
+import "mathx.wide"
+
+c = Circle { r: 5 }
+area = circle_area(c)   # 3 * 25 = 75
+cubed = cube(3)         # 27  (mathx visible transitively)
