@@ -1,0 +1,55 @@
+name: Release
+
+# Pushing a tag like v0.52.0 builds standalone binaries for the three major platforms
+# (with the jit and gpu features compiled in — both degrade gracefully at runtime)
+# and attaches them to a GitHub Release, together with the guides and examples.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x86_64
+            bin: wide.exe
+          - os: ubuntu-latest
+            target: linux-x86_64
+            bin: wide
+          - os: macos-latest
+            target: macos-arm64
+            bin: wide
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --features jit,gpu
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/wide-${{ github.ref_name }}-${{ matrix.target }}
+          cp target/release/${{ matrix.bin }} dist/wide-${{ github.ref_name }}-${{ matrix.target }}/
+          cp README.md GUIDE.en.md GUIDE.ko.md BENCH.md dist/wide-${{ github.ref_name }}-${{ matrix.target }}/
+          cp -r examples dist/wide-${{ github.ref_name }}-${{ matrix.target }}/examples
+          cd dist
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a wide-${{ github.ref_name }}-${{ matrix.target }}.zip wide-${{ github.ref_name }}-${{ matrix.target }}
+          else
+            tar czf wide-${{ github.ref_name }}-${{ matrix.target }}.tar.gz wide-${{ github.ref_name }}-${{ matrix.target }}
+          fi
+      - name: Upload to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/wide-${{ github.ref_name }}-${{ matrix.target }}.zip
+            dist/wide-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+          generate_release_notes: true

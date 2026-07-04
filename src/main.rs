@@ -25,8 +25,37 @@ xs = [3, 1, 4, 1, 5]
 print(xs.sum())
 "#;
 
+const HELP: &str = "wide — illuminate, don't isolate
+
+A language that shows costs and risks instead of hiding them: every run prints
+your program's output followed by an illumination report (INFO:/WARN: lines
+woven into the source).
+
+USAGE:
+    wide [OPTIONS] [FILE]
+
+ARGUMENTS:
+    [FILE]          a .wide program to run (omitted: runs a small built-in demo)
+
+OPTIONS:
+    --vm            run on the bytecode VM backend (default: tree-walker)
+    --time          print the execution time to stderr (excludes process startup)
+    -h, --help      show this help
+    -V, --version   show the version
+
+The run sequence is always: static check -> run -> illumination report.
+Start with GUIDE.en.md (English) or GUIDE.ko.md (Korean); examples live in examples/.";
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", HELP);
+        return;
+    }
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("wide {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     // `--vm`: run via the bytecode compiler + VM (stage 2). Default is the tree-walker (the reference).
     let use_vm = args.iter().any(|a| a == "--vm");
     // `--time`: print the execution wall time to stderr (excludes process startup — for benchmarks;
@@ -71,7 +100,7 @@ fn run_prog_vm(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(),
         return Err(format!("static check failed ({} errors) — not running", errors.len()));
     }
     let compiled = wide::compile::compile(prog)?;
-    println!("=== wide v0.51 (vm) · {} ===\n", name);
+    println!("=== wide v{} (vm) · {} ===\n", env!("CARGO_PKG_VERSION"), name);
     println!("— program output —");
     let mut machine = wide::Vm::new();
     let runtime = machine.run(&compiled);
@@ -105,7 +134,7 @@ fn run_prog(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(), St
         return Err(format!("static check failed ({} errors) — not running", errors.len()));
     }
 
-    println!("=== wide v0.51 · {} ===\n", name);
+    println!("=== wide v{} · {} ===\n", env!("CARGO_PKG_VERSION"), name);
     println!("— program output —");
 
     let mut interp = Interp::new();

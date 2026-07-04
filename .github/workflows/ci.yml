@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (default)
+        run: cargo test
+      - name: Test (slim core)
+        run: cargo test --no-default-features
+      - name: Test (jit)
+        run: cargo test --features jit
+      - name: Build (gpu)
+        # CI runners have no GPU adapter — gpu tests skip themselves honestly, so building is
+        # the meaningful check here.
+        run: cargo build --features gpu

@@ -37,6 +37,28 @@ $ cargo run -- examples/borrow.wide
 Every cost — heap allocations, FLOPs, transfers, activation memory, borrows, file I/O bytes — flows
 through one illumination channel (`INFO:`/`WARN:`) woven into your source lines after each run.
 
+## Install
+
+**Prebuilt binaries** (Windows / Linux / macOS) are attached to each
+[GitHub Release](../../releases) — download, unpack, and run:
+
+```bash
+wide examples/hello.wide
+wide --help
+```
+
+The binary is standalone (the JIT and GPU backends are compiled in and degrade gracefully —
+no GPU means an illuminated CPU fallback, not a failure).
+
+**From source** (needs Rust):
+
+```bash
+git clone <this repo> && cd wide
+cargo run -- examples/hello.wide
+```
+
+The default build has zero external dependencies and compiles in well under a minute.
+
 ## Quick start
 
 ```bash
