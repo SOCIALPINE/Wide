@@ -1907,6 +1907,36 @@ fn illumination_aggregates_in_loops() {
     assert_eq!(it.channel.truncated, 0);
 }
 
+// ---- v0.54: class declarations (struct + impl in one, with associated functions) ----
+
+#[test]
+fn class_constructor_methods_fields() {
+    let src = "class Counter {\n n, step\n fn new(start) {\n return Counter { n: start, step: 1 }\n }\n fn tick(self) {\n self.n = self.n + self.step\n return self.n\n }\n}\nc = Counter::new(10)\na = c.tick()\nb = c.tick()\nn = c.n";
+    let it = eval_program(src).unwrap();
+    assert_eq!(it.get("a").unwrap(), int(11));
+    assert_eq!(it.get("b").unwrap(), int(12));
+    assert_eq!(it.get("n").unwrap(), int(12));
+    // A class still works as a plain struct literal too (it *is* a struct + impl).
+    assert_eq!(val("class P { x, y\n fn s(self) { return self.x + self.y }\n}\np = P { x: 3, y: 4 }\nr = p.s()", "r"), int(7));
+}
+
+#[test]
+fn class_vm_parity_no_infinite_loop() {
+    // Regression: the VM's associated-function dispatch `continue`d without advancing the instruction
+    // pointer — the op re-executed forever and the stack grew until memory ran out (user-reported).
+    let src = "class Counter {\n n, step\n fn new(start) {\n return Counter { n: start, step: 1 }\n }\n fn tick(self) {\n self.n = self.n + self.step\n return self.n\n }\n}\nc = Counter::new(10)\na = c.tick()\nb = c.tick()\nn = c.n";
+    assert_eq!(vm_val(src, "a"), int(11));
+    assert_eq!(vm_val(src, "b"), int(12));
+    assert_eq!(vm_val(src, "n"), val(src, "n"));
+}
+
+#[test]
+fn class_errors() {
+    // Fields must precede methods; enum construction is unaffected by associated-fn dispatch.
+    assert!(wide::parse("class C {\n fn m(self) { return 1 }\n x\n}").is_err(), "fields after methods rejected");
+    assert_eq!(val("enum E { A(v) }\nx = match E::A(7) { E::A(v) => v, _ => 0 }", "x"), int(7));
+}
+
 // ---- v0.18: I/O (cout / cin) ----
 
 #[test]

@@ -1,0 +1,40 @@
+# wide example — class declarations
+# run: cargo run -- examples/classes.wide      (identical on the VM: --vm)
+#
+# A `class` is one declaration that combines a struct (the fields) with an impl (the methods).
+# A method whose first parameter is `self` is an instance method; one without `self` is an
+# associated function, called as `Name::fn(...)` — by convention, `new` is the constructor.
+
+class Stack {
+    items
+
+    fn new() {
+        return Stack { items: [] }
+    }
+
+    fn push(self, v) {
+        self.items.push(v)
+    }
+
+    fn pop(self) {
+        if self.items.len == 0 { return err("pop from empty stack") }
+        return self.items.pop()
+    }
+
+    fn size(self) {
+        return self.items.len
+    }
+}
+
+s = Stack::new()
+s.push(10)
+s.push(20)
+s.push(30)
+print(s.size())        # 3
+print(s.pop())         # 30
+print(s.pop())         # 20
+print(s.size())        # 1
+
+bad = Stack::new().pop()
+print(is_err(bad))     # true — errors are values here too
+print("classes ok")

@@ -481,6 +481,9 @@ impl Vm {
                                 let mut scopes = vec![frame];
                                 let r = self.run_chunk(&f.chunk, &mut scopes)?.unwrap_or(Value::Unit);
                                 stack.push(r);
+                                // `continue` skips the loop-tail `ip += 1` — advance manually, or this
+                                // op re-executes forever, growing the stack until memory runs out.
+                                ip += 1;
                                 continue;
                             }
                         }

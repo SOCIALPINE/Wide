@@ -274,6 +274,34 @@ area = match s {
 Patterns include literals, the wildcard `_`, bindings, enum variants, and struct patterns
 (`Point { x: 0, y }`). Enums may be recursive, so linked lists and trees can be defined directly.
 
+### Classes
+
+A `class` combines a struct and its impl in one declaration. Fields come first, then methods.
+A method without a `self` parameter is an **associated function**, called as `Name::fn(...)` —
+by convention, `new` is the constructor:
+
+```
+class Counter {
+    n, step
+
+    fn new(start) {                      # associated function (no self) — the constructor
+        return Counter { n: start, step: 1 }
+    }
+
+    fn tick(self) {                      # instance method
+        self.n = self.n + self.step
+        return self.n
+    }
+}
+
+c = Counter::new(10)
+c.tick()                                 # 11
+c.n                                      # 11
+```
+
+A class *is* a struct, so `Counter { n: 0, step: 2 }` literals and struct patterns work on it
+directly.
+
 ## 9. Error handling
 
 wide uses **error values**, not exceptions. A function returns either a normal value or an error
@@ -561,6 +589,7 @@ benchmarking).
 # structs         struct P { x, y }   P { x: 1, y: 2 }   p.x
 # methods         impl P { fn m(self) { ... } }   p.m()
 # enums           enum E { A(v)  B }   E::A(5)
+# classes         class C { fields  fn new(..) { }  fn m(self) { } }   C::new(..)
 # matching        match v { E::A(x) => { ... }  _ => { ... } }
 # errors          err(m)  is_err(v)  err_msg(v)  f()?
 # modules         import "file.wide"   import "std/ai" "std/fs" "std/heap" "std/set"
