@@ -12,11 +12,12 @@ pub struct Parser {
     toks: Vec<Token>,
     pos: usize,
     structs: HashSet<String>, // known struct names — resolves `Name { }` literal ambiguity
+    pending: Vec<Stmt>,       // extra statements a desugaring produced (e.g. class → struct + impl)
 }
 
 impl Parser {
     pub fn new(toks: Vec<Token>, structs: HashSet<String>) -> Self {
-        Parser { toks, pos: 0, structs }
+        Parser { toks, pos: 0, structs, pending: Vec::new() }
     }
 
     fn peek(&self) -> &Tok {
@@ -84,6 +85,7 @@ impl Parser {
                 return Err(format!("line {}: expected '{:?}', found end of file", self.peek_span().line, terminator));
             }
             stmts.push(self.parse_stmt()?);
+            stmts.append(&mut self.pending); // e.g. `class` desugars into struct + impl (v0.54)
             match self.peek() {
                 Tok::Newline => self.skip_newlines(),
                 t if t == terminator => break,
@@ -127,6 +129,7 @@ impl Parser {
             Tok::Struct => self.parse_struct(),
             Tok::Enum => self.parse_enum(),
             Tok::Impl => self.parse_impl(),
+            Tok::Class => self.parse_class(),
             Tok::Match => self.parse_match(),
             Tok::Import => self.parse_import(),
             Tok::At => self.parse_directive(),
@@ -391,6 +394,42 @@ impl Parser {
         }
         self.eat(&Tok::RBrace)?;
         Ok(Stmt::Impl { type_name, methods, span })
+    }
+
+    /// `class Name { fields... methods... }` — one declaration that desugars into
+    /// `struct Name { fields }` + `impl Name { methods }` (v0.54). Fields come first (bare names,
+    /// comma/newline separated); every `fn` from the first one on is a method. A method without a
+    /// leading `self` parameter is an *associated function*, called as `Name::fn_name(args)`
+    /// (the `new` constructor by convention).
+    fn parse_class(&mut self) -> Result<Stmt, String> {
+        let span = self.peek_span();
+        self.eat(&Tok::Class)?;
+        let name = self.ident()?;
+        self.eat(&Tok::LBrace)?;
+        self.skip_newlines();
+        let mut fields = Vec::new();
+        while !matches!(self.peek(), Tok::RBrace | Tok::Fn) {
+            fields.push(self.ident()?);
+            if matches!(self.peek(), Tok::Comma) {
+                self.advance();
+            }
+            self.skip_newlines();
+        }
+        let mut methods = Vec::new();
+        while !matches!(self.peek(), Tok::RBrace) {
+            if !matches!(self.peek(), Tok::Fn) {
+                return Err(format!(
+                    "line {}: class fields must come before methods (found: '{:?}')",
+                    self.peek_span().line,
+                    self.peek()
+                ));
+            }
+            methods.push(self.parse_fn()?);
+            self.skip_newlines();
+        }
+        self.eat(&Tok::RBrace)?;
+        self.pending.push(Stmt::Impl { type_name: name.clone(), methods, span });
+        Ok(Stmt::Struct { name, fields, span })
     }
 
     fn parse_import(&mut self) -> Result<Stmt, String> {

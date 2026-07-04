@@ -32,10 +32,10 @@ use std::path::{Path, PathBuf};
 
 use token::{Tok, Token};
 
-/// Collect `struct Name` names from the tokens into the set — to tell `Name { }` literals apart from blocks.
+/// Collect `struct Name` / `class Name` names from the tokens — to tell `Name { }` literals apart from blocks.
 fn scan_struct_names(toks: &[Token], out: &mut HashSet<String>) {
     for w in toks.windows(2) {
-        if matches!(w[0].tok, Tok::Struct) {
+        if matches!(w[0].tok, Tok::Struct | Tok::Class) {
             if let Tok::Ident(n) = &w[1].tok {
                 out.insert(n.clone());
             }

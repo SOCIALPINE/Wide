@@ -342,6 +342,11 @@ impl Checker {
     }
 
     fn check_enum_ref(&mut self, ename: &str, variant: &str, arity: usize, line: usize) {
+        // `Name::assoc(args)` on a class/struct is an associated-function call (v0.54) — method
+        // existence is resolved like other methods (conservatively, at runtime).
+        if !self.enums.contains_key(ename) && self.structs.contains_key(ename) {
+            return;
+        }
         match self.enums.get(ename) {
             None => self.err(line, format!("undefined enum '{}'", ename)),
             Some(vs) => match vs.get(variant) {

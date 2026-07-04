@@ -104,7 +104,7 @@ fn run_prog_vm(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(),
     println!("— program output —");
     let mut machine = wide::Vm::new();
     let runtime = machine.run(&compiled);
-    report_illumination(source, &machine.channel.records);
+    report_illumination(source, &machine.channel);
     runtime
 }
 
@@ -141,12 +141,13 @@ fn run_prog(prog: &[wide::ast::Stmt], source: &str, name: &str) -> Result<(), St
     let runtime = interp.run(prog);
 
     // illumination is *always* shown even on error — often that WARN: diagnoses the error (principle 1).
-    report_illumination(source, &interp.channel.records);
+    report_illumination(source, &interp.channel);
     runtime
 }
 
 /// Illumination report — weaves INFO:/WARN: labels into the source lines.
-fn report_illumination(source: &str, recs: &[Lumen]) {
+fn report_illumination(source: &str, ch: &wide::lumen::Channel) {
+    let recs = &ch.records;
     if recs.is_empty() {
         return;
     }
@@ -166,7 +167,14 @@ fn report_illumination(source: &str, recs: &[Lumen]) {
                 Level::Info => ("INFO", "\x1b[36m"),
                 Level::Warn => ("WARN", "\x1b[33m"),
             };
-            println!("    {}  {}: {}\x1b[0m", color, label, r.msg);
+            if r.count > 1 {
+                println!("    {}  {}: {} (× {})\x1b[0m", color, label, r.msg, r.count);
+            } else {
+                println!("    {}  {}: {}\x1b[0m", color, label, r.msg);
+            }
         }
+    }
+    if ch.truncated > 0 {
+        println!("    \x1b[33m  WARN: illumination truncated — {} further unique records were not stored\x1b[0m", ch.truncated);
     }
 }

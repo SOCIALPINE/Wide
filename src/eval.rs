@@ -38,8 +38,8 @@ enum Flow {
 pub struct Interp {
     globals: HashMap<String, Value>,
     locals: Vec<HashMap<String, Value>>,
-    funcs: HashMap<String, Func>,
-    methods: HashMap<String, HashMap<String, Func>>,  // struct name → (method name → Func), explicit self
+    funcs: HashMap<String, std::rc::Rc<Func>>, // Rc: calls share the body instead of deep-cloning the AST per call (v0.53)
+    methods: HashMap<String, HashMap<String, std::rc::Rc<Func>>>,  // struct name → (method name → Func), explicit self
     structs: HashMap<String, Vec<String>>,            // name → field names
     enums: HashMap<String, HashMap<String, usize>>,   // name → (variant → arity)
     err_value: Option<Value>,                         // error value being propagated by `?`
@@ -326,7 +326,7 @@ impl Interp {
                 Stmt::Fn { name, params, body, span, .. } => {
                     self.funcs.insert(
                         name.clone(),
-                        Func { params: params.clone(), body: body.clone() },
+                        std::rc::Rc::new(Func { params: params.clone(), body: body.clone() }),
                     );
                     #[cfg(feature = "jit")]
                     jit_cands.push((name.clone(), params.clone(), body.clone(), *span));
@@ -346,7 +346,7 @@ impl Interp {
                         if let Stmt::Fn { name, params, body, .. } = m {
                             table.insert(
                                 name.clone(),
-                                Func { params: params.clone(), body: body.clone() },
+                                std::rc::Rc::new(Func { params: params.clone(), body: body.clone() }),
                             );
                         }
                     }
@@ -961,6 +961,12 @@ impl Interp {
                 }
             }
         }
+        self.invoke(&func, argv, name, span)
+    }
+
+    /// Run a function body in a fresh frame with already-evaluated arguments — the shared core of
+    /// named calls, associated functions (`Name::fn`, v0.54), and anything else that owns a `Func`.
+    fn invoke(&mut self, func: &Func, argv: Vec<Value>, label: &str, span: Span) -> Result<Value, String> {
         let mut frame = HashMap::new();
         for (p, v) in func.params.iter().zip(argv) {
             frame.insert(p.clone(), v);
@@ -977,7 +983,7 @@ impl Interp {
             Ok(Flow::Return(v)) => Ok(v),
             Ok(Flow::Normal) => Ok(Value::Unit),
             Ok(Flow::Break) | Ok(Flow::Continue) => {
-                Err(format!("line {}: break/continue outside a loop in function '{}'", span.line, name))
+                Err(format!("line {}: break/continue outside a loop in function '{}'", span.line, label))
             }
             // Turn the error value propagated by `?` back into this function's return value.
             Err(ref s) if s == PROPAGATE => Ok(self.err_value.take().unwrap_or(Value::Unit)),
@@ -1726,6 +1732,23 @@ impl Interp {
     }
 
     fn enum_lit(&mut self, ename: &str, variant: &str, args: &[Expr], span: Span) -> Result<Value, String> {
+        // `Name::assoc(args)` on a class/struct — an associated function (no `self`), v0.54.
+        // `Name::new(...)` is the constructor by convention.
+        if !self.enums.contains_key(ename) {
+            if let Some(f) = self.methods.get(ename).and_then(|t| t.get(variant)).cloned() {
+                if f.params.first().map(|p| p.as_str()) != Some("self") {
+                    if args.len() != f.params.len() {
+                        return Err(format!(
+                            "line {}: {}::{} expects {} arg(s), got {}",
+                            span.line, ename, variant, f.params.len(), args.len()
+                        ));
+                    }
+                    let argv = self.eval_args(args)?;
+                    let label = format!("{}::{}", ename, variant);
+                    return self.invoke(&f, argv, &label, span);
+                }
+            }
+        }
         let arity = *self
             .enums
             .get(ename)

@@ -462,6 +462,29 @@ impl Vm {
                 Op::EnumLit(ei, vi, argc) => {
                     let ename = chunk.names[*ei].clone();
                     let variant = chunk.names[*vi].clone();
+                    // `Name::assoc(args)` — a class associated function (v0.54): dispatch like a call.
+                    if !self.enums.contains_key(&ename) {
+                        if let Some(f) = self.methods.get(&ename).and_then(|t| t.get(&variant)).cloned() {
+                            if f.params.first().map(|p| p.as_str()) != Some("self") {
+                                let mut argv = Vec::with_capacity(*argc);
+                                for _ in 0..*argc {
+                                    argv.push(pop(&mut stack));
+                                }
+                                argv.reverse();
+                                if argv.len() != f.params.len() {
+                                    return Err(format!("line {}: {}::{} expects {} arg(s), got {}", line, ename, variant, f.params.len(), argv.len()));
+                                }
+                                let mut frame = HashMap::new();
+                                for (p, v) in f.params.iter().zip(argv) {
+                                    frame.insert(p.clone(), v);
+                                }
+                                let mut scopes = vec![frame];
+                                let r = self.run_chunk(&f.chunk, &mut scopes)?.unwrap_or(Value::Unit);
+                                stack.push(r);
+                                continue;
+                            }
+                        }
+                    }
                     match self.enums.get(&ename) {
                         None => return Err(format!("line {}: undefined enum '{}'", line, ename)),
                         Some(vs) => match vs.get(&variant) {

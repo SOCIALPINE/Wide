@@ -147,6 +147,7 @@ fn keyword(s: &str) -> Tok {
         "match" => Tok::Match,
         "import" => Tok::Import,
         "impl" => Tok::Impl,
+        "class" => Tok::Class,
         _ => Tok::Ident(s.to_string()),
     }
 }

@@ -30,6 +30,7 @@ pub enum Tok {
     Match,
     Import,
     Impl,
+    Class, // class = struct + impl in one declaration (v0.54)
     // operators
     Eq,    // =
     EqEq,  // ==

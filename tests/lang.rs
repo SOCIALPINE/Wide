@@ -1893,6 +1893,20 @@ fn ml_requires_import() {
     assert!(errs2.iter().any(|e| e.contains("std/ml")), "read_csv is gated: {:?}", errs2);
 }
 
+// ---- v0.53: illumination memory — identical records aggregate instead of accumulating ----
+
+#[test]
+fn illumination_aggregates_in_loops() {
+    // 10k identical allocations must produce ONE record with a count, not 10k records
+    // (unbounded accumulation made long-running programs balloon — measured 55 MB at 300k iterations).
+    let src = "i = 0\nwhile i < 10000 {\n xs = [1, 2, 3]\n i = i + 1\n}\nn = i";
+    let it = eval_program(src).unwrap();
+    assert_eq!(it.get("n").unwrap(), int(10000));
+    assert!(it.channel.records.len() < 10, "records must aggregate: {} stored", it.channel.records.len());
+    assert!(it.channel.records.iter().any(|r| r.count == 10000), "the repeated record carries its count");
+    assert_eq!(it.channel.truncated, 0);
+}
+
 // ---- v0.18: I/O (cout / cin) ----
 
 #[test]
