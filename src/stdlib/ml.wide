@@ -1,0 +1,109 @@
+# wide standard library — std/ml
+# Simple, scikit-learn-style built-in models and EDA helpers, written in wide itself
+# (embedded into the binary; `import "std/ml"` splices these definitions in).
+
+import "std/ai"
+
+# --- internal: an r x c zero parameter (trainable) ---
+fn ml_zero_param(r, c) {
+    rows = []
+    i = 0
+    while i < r {
+        row = []
+        j = 0
+        while j < c {
+            row.push(0)
+            j = j + 1
+        }
+        rows.push(row)
+        i = i + 1
+    }
+    return param(rows)
+}
+
+# --- linear regression: y ~ x @ w + b, mean-squared-error loss, Adam ---
+struct LinearRegression { w, b }
+
+fn linear_regression() {
+    return LinearRegression { w: 0, b: 0 }
+}
+
+impl LinearRegression {
+    # x: (n, d) tensor, y: (n, 1) tensor. Returns the final training loss (MSE).
+    fn fit(self, x, y, epochs, lr) {
+        d = x.shape[1]
+        self.w = ml_zero_param(d, 1)
+        self.b = ml_zero_param(1, 1)
+        loss = tensor([0])
+        i = 0
+        while i < epochs {
+            diff = matmul(x, self.w) + self.b - y
+            loss = (diff * diff).mean()
+            loss.backward()
+            adam_step(self.w, lr)
+            adam_step(self.b, lr)
+            i = i + 1
+        }
+        return loss.item()
+    }
+
+    fn predict(self, x) {
+        return matmul(x, self.w) + self.b
+    }
+
+    # mean squared error on (x, y) — lower is better.
+    fn score(self, x, y) {
+        diff = self.predict(x) - y
+        return (diff * diff).mean().item()
+    }
+}
+
+# --- logistic regression: p = sigmoid(x @ w + b), binary-cross-entropy loss, Adam ---
+struct LogisticRegression { w, b }
+
+fn logistic_regression() {
+    return LogisticRegression { w: 0, b: 0 }
+}
+
+impl LogisticRegression {
+    # x: (n, d) tensor, y: (n, 1) tensor of 0/1 labels. Returns the final training loss (BCE).
+    fn fit(self, x, y, epochs, lr) {
+        d = x.shape[1]
+        self.w = ml_zero_param(d, 1)
+        self.b = ml_zero_param(1, 1)
+        loss = tensor([0])
+        i = 0
+        while i < epochs {
+            p = sigmoid(matmul(x, self.w) + self.b)
+            loss = 0 - ((y * log(p) + (1 - y) * log(1 - p)).mean())
+            loss.backward()
+            adam_step(self.w, lr)
+            adam_step(self.b, lr)
+            i = i + 1
+        }
+        return loss.item()
+    }
+
+    # probabilities in (0, 1)
+    fn predict(self, x) {
+        return sigmoid(matmul(x, self.w) + self.b)
+    }
+
+    # binary cross-entropy on (x, y) — lower is better.
+    fn score(self, x, y) {
+        p = self.predict(x)
+        return (0 - ((y * log(p) + (1 - y) * log(1 - p)).mean())).item()
+    }
+}
+
+# --- EDA: quick per-column summary of a 2-D tensor ---
+fn describe(t) {
+    print("shape:", t.shape, "· size:", t.size)
+    m = t.mean(0)
+    print("mean (per column):", m)
+    v = ((t - m) * (t - m)).mean(0)
+    print("std  (per column):", sqrt(v))
+    mx = t.max().item()
+    mn = 0 - (0 - t).max().item()
+    print("min:", mn, "· max:", mx)
+}

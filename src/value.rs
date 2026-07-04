@@ -53,6 +53,7 @@ pub enum GradOp {
     Reshape,        // view with a new shape (same data order); dInput = g reshaped to the input shape
     Conv2d,         // valid 2D cross-correlation; dX = full-corr of g with flipped k, dK = valid-corr of x with g
     MaxPool2d { k: usize }, // non-overlapping k×k max pooling; dInput routes g to each window's argmax
+    Sqrt,           // s=√x; dInput = g * 0.5 / s
     Relu,           // dInput = g * (input>0)
     Transpose,      // dInput = gᵀ
     Sigmoid,        // s=σ(x); dInput = g * s*(1-s)

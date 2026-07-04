@@ -1309,7 +1309,7 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "cranelift",
  "cranelift-jit",

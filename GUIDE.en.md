@@ -479,6 +479,32 @@ classifier end to end.
 Current limits: `.backward()` requires a scalar, division is not differentiable, and matmul is
 2-D only.
 
+### Built-in models and EDA — std/ml
+
+Common simple models come ready-made. Import them with `import "std/ml"`; the models themselves
+are written in wide and trained with the language's own autodiff:
+
+```
+import "std/ml"
+
+m = logistic_regression()
+m.fit(x, y, 300, 0.1)          # x: (n,d), y: (n,1) 0/1 labels — returns the final BCE loss
+m.predict(x)                   # a tensor of probabilities
+m.score(x, y)                  # BCE (lower is better)
+
+lm = linear_regression()       # same shape: fit / predict / score (MSE)
+```
+
+Data-exploration helpers ship alongside:
+
+```
+t = read_csv("data.csv")       # numeric CSV → tensor (a header row is detected and skipped)
+describe(t)                    # shape, per-column mean/std, min/max
+sqrt(t)                        # elementwise square root (differentiable)
+```
+
+`read_csv` failures come back as the same error values file I/O uses.
+
 ### GPU
 
 ```

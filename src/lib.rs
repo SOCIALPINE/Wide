@@ -58,13 +58,39 @@ fn scan_imports(toks: &[Token]) -> Vec<String> {
     v
 }
 
+/// Standard-library modules *written in wide itself* (embedded in the binary; dogfooding).
+/// `import "std/ml"` splices these definitions in at the import site.
+const STD_ML_SRC: &str = include_str!("stdlib/ml.wide");
+
+/// Expand std modules that carry wide source: the first `import "std/<m>"` with an embedded source is
+/// followed by that source's statements (the import marker itself stays — the evaluator's gating reads
+/// it). Duplicated imports splice once.
+fn expand_std_sources(stmts: Vec<ast::Stmt>) -> Result<Vec<ast::Stmt>, String> {
+    let mut out = Vec::with_capacity(stmts.len());
+    let mut done = false;
+    for s in stmts {
+        let is_ml = matches!(&s, ast::Stmt::Import(p, _) if p == "std/ml");
+        out.push(s);
+        if is_ml && !done {
+            done = true;
+            let toks = lexer::lex(STD_ML_SRC).map_err(|e| format!("(std/ml) {}", e))?;
+            let mut structs = HashSet::new();
+            scan_struct_names(&toks, &mut structs);
+            let mut p = parser::Parser::new(toks, structs);
+            let ml = p.parse_program().map_err(|e| format!("(std/ml) {}", e))?;
+            out.extend(ml);
+        }
+    }
+    Ok(out)
+}
+
 /// Parse source tokens→AST (single file).
 pub fn parse(source: &str) -> Result<Vec<ast::Stmt>, String> {
     let toks = lexer::lex(source)?;
     let mut structs = HashSet::new();
     scan_struct_names(&toks, &mut structs);
     let mut p = parser::Parser::new(toks, structs);
-    p.parse_program()
+    expand_std_sources(p.parse_program()?)
 }
 
 /// Static-check errors as strings (for tests).
@@ -151,7 +177,7 @@ pub fn load_file(path: &Path) -> Result<Vec<ast::Stmt>, String> {
             }
         }
     }
-    Ok(out)
+    expand_std_sources(out)
 }
 
 /// Collect the import graph in dependency-first order. Pushes (canon, tokens) onto files.

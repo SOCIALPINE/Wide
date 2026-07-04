@@ -1833,6 +1833,66 @@ fn gpu_training_still_converges() {
     assert!(f < 0.5, "training over the gpu backend should converge (final {})", f);
 }
 
+// ---- v0.53: std/ml — built-in models (scikit-learn style) + EDA helpers ----
+
+#[cfg(feature = "ai")]
+#[test]
+fn ml_logistic_regression_fits_and_scores() {
+    // OR gate: fit converges; predictions land on the right side of 0.5; score = BCE.
+    let src = "import \"std/ml\"\nx = tensor([[0, 0], [0, 1], [1, 0], [1, 1]])\ny = tensor([[0], [1], [1], [1]])\nm = logistic_regression()\nloss = m.fit(x, y, 300, 0.1)\ns = m.score(x, y)\np0 = m.predict(tensor([[0, 0]])).item()\np1 = m.predict(tensor([[1, 1]])).item()";
+    let it = eval_program(src).unwrap();
+    let f = |k: &str| match it.get(k).unwrap() { Value::Float(x) => x, v => panic!("{k} not float: {v:?}") };
+    assert!(f("loss") < 0.1, "BCE should converge (got {})", f("loss"));
+    assert!(f("s") < 0.1, "score is BCE (got {})", f("s"));
+    assert!(f("p0") < 0.5 && f("p1") > 0.5, "predictions separate the classes ({}, {})", f("p0"), f("p1"));
+}
+
+#[cfg(feature = "ai")]
+#[test]
+fn ml_linear_regression_fits() {
+    // y = 1 + 2a + 3b — the model recovers it well enough to extrapolate.
+    let src = "import \"std/ml\"\nx = tensor([[1, 1], [2, 1], [3, 2], [4, 3], [5, 5]])\ny = tensor([[6], [8], [13], [18], [26]])\nm = linear_regression()\nloss = m.fit(x, y, 500, 0.1)\npred = m.predict(tensor([[6, 4]])).item()";
+    let it = eval_program(src).unwrap();
+    let f = |k: &str| match it.get(k).unwrap() { Value::Float(x) => x, v => panic!("{k} not float: {v:?}") };
+    assert!(f("loss") < 0.1, "MSE should converge (got {})", f("loss"));
+    assert!((f("pred") - 25.0).abs() < 1.0, "predict(6,4) ~ 25 (got {})", f("pred"));
+}
+
+#[cfg(feature = "ai")]
+#[test]
+fn ml_read_csv_and_describe() {
+    let dir = std::env::temp_dir().join("wide_ml_test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("d.csv").to_string_lossy().replace('\\', "/");
+    std::fs::write(dir.join("d.csv"), "a,b\n1,10\n2,20\n3,30\n4,40\n").unwrap();
+    let src = format!("import \"std/ml\"\nt = read_csv(\"{p}\")\nsh = t.shape\ns = t.sum().item()\ndescribe(t)");
+    let it = eval_program(&src).unwrap();
+    assert_eq!(it.get("sh").unwrap(), arr(vec![int(4), int(2)])); // header skipped
+    assert_eq!(it.get("s").unwrap(), Value::Float(110.0));
+    let msgs: Vec<String> = it.channel.records.iter().map(|r| r.msg.clone()).collect();
+    assert!(msgs.iter().any(|m| m.contains("csv read") && m.contains("header skipped")), "csv illuminated: {:?}", msgs);
+    // failure is an error-value
+    assert_eq!(val("import \"std/ml\"\ne = is_err(read_csv(\"no_such.csv\"))", "e"), boolean(true));
+    let _ = std::fs::remove_file(dir.join("d.csv"));
+}
+
+#[cfg(feature = "ai")]
+#[test]
+fn ml_sqrt_tensor_is_differentiable() {
+    assert_eq!(val("t = tensor([4, 9, 16])\ns = sqrt(t).sum().item()", "s"), Value::Float(9.0));
+    // d/dx sqrt = 0.5/sqrt(x): at 4 → 0.25, at 16 → 0.125; sum = 0.375
+    let src = "w = param([4, 16])\nl = sqrt(w).sum()\nl.backward()\ng = w.grad.sum().item()";
+    assert_eq!(val(src, "g"), Value::Float(0.375));
+}
+
+#[test]
+fn ml_requires_import() {
+    let errs = wide::type_errors("m = logistic_regression()").unwrap();
+    assert!(errs.iter().any(|e| e.contains("undefined function")), "no defs without the import: {:?}", errs);
+    let errs2 = wide::type_errors("t = read_csv(\"x.csv\")").unwrap();
+    assert!(errs2.iter().any(|e| e.contains("std/ml")), "read_csv is gated: {:?}", errs2);
+}
+
 // ---- v0.18: I/O (cout / cin) ----
 
 #[test]

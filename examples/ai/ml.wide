@@ -1,0 +1,32 @@
+# std/ml — built-in models (scikit-learn style) and EDA helpers
+# run: cargo run -- examples/ai/ml.wide
+#
+# `import "std/ml"` brings in ready-made models — written in wide itself and trained with the
+# language's own autodiff. Every training step's cost flows through the illumination channel.
+
+import "std/ml"
+import "std/fs"
+
+# --- logistic regression: learn OR ---
+x = tensor([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = tensor([[0], [1], [1], [1]])
+
+m = logistic_regression()
+print("final BCE:", m.fit(x, y, 300, 0.1))     # converges to ~0.01
+print("probabilities:", m.predict(x))          # ~[0.03, 0.99, 0.99, 0.9999]
+print("score (BCE):", m.score(x, y))
+
+# --- linear regression: recover y = 1 + 2a + 3b ---
+xl = tensor([[1, 1], [2, 1], [3, 2], [4, 3], [5, 5]])
+yl = tensor([[6], [8], [13], [18], [26]])
+
+lm = linear_regression()
+print("final MSE:", lm.fit(xl, yl, 500, 0.1))
+print("predict(6, 4):", lm.predict(tensor([[6, 4]])))   # ~25 (true: 1 + 12 + 12)
+
+# --- EDA: CSV → tensor → summary ---
+write_file("ml_demo.csv", "a,b\n1,10\n2,20\n3,30\n4,40")
+t = read_csv("ml_demo.csv")     # the header row is detected and skipped (illuminated)
+describe(t)                     # shape, per-column mean/std, min/max
+remove_file("ml_demo.csv")
+print("ml ok")

@@ -73,6 +73,7 @@ fn builtin_module(name: &str) -> Option<&'static str> {
         "tensor" | "param" | "zeros" | "ones" | "matmul" | "conv2d" | "maxpool2d" | "relu" | "sigmoid"
         | "tanh" | "exp" | "log" | "softmax" | "transpose" | "grad_step" | "adam_step" => Some("ai"),
         "read_file" | "read_lines" | "write_file" | "append_file" | "remove_file" | "file_exists" => Some("fs"),
+        "read_csv" => Some("ml"),
         "heap" => Some("heap"),
         "set" => Some("set"),
         _ => None,
@@ -1069,7 +1070,19 @@ impl Interp {
                 Value::Float(x) => Value::Float(x.abs()),
                 other => return Err(format!("line {}: abs() takes numbers only (found {})", line, other.type_name())),
             },
-            "sqrt" => Value::Float(self.one_num(args, name, line)?.sqrt()),
+            "sqrt" => {
+                // sqrt is core for numbers; on a tensor it is elementwise and differentiable (std/ml, v0.53).
+                let v = self.one(args, name, line)?;
+                #[cfg(feature = "ai")]
+                if let Value::Tensor(t) = &v {
+                    return Ok(Some(self.unary_tensor_v(t.clone(), name, span, GradOp::Sqrt, |x| x.sqrt())));
+                }
+                match v {
+                    Value::Int(n) => Value::Float((n as f64).sqrt()),
+                    Value::Float(x) => Value::Float(x.sqrt()),
+                    other => return Err(format!("line {}: sqrt() takes a number or tensor (found {})", line, other.type_name())),
+                }
+            }
             "floor" => Value::Int(self.one_num(args, name, line)?.floor() as i64),
             "ceil" => Value::Int(self.one_num(args, name, line)?.ceil() as i64),
             "pow" => {
@@ -1108,6 +1121,49 @@ impl Interp {
                     .and_then(char::from_u32)
                     .ok_or_else(|| format!("line {}: chr({}) invalid code point", line, n))?;
                 Value::Str(c.to_string())
+            }
+            #[cfg(feature = "ai")]
+            "read_csv" => {
+                // std/ml (v0.53): numeric CSV → tensor. A non-numeric first row is treated as a
+                // header and skipped (illuminated). I/O failures are error-values (like std/fs).
+                let v = self.one(args, name, line)?;
+                let path = match v {
+                    Value::Str(p) => p,
+                    other => return Err(format!("line {}: read_csv(path) takes a string path (found {})", line, other.type_name())),
+                };
+                let text = match std::fs::read_to_string(&path) {
+                    Ok(t) => t,
+                    Err(e) => return Ok(Some(Value::Err(Box::new(Value::Str(format!("read_csv \"{}\": {}", path, e)))))),
+                };
+                let mut rows: Vec<Vec<f32>> = Vec::new();
+                let mut skipped_header = false;
+                for (i, ln) in text.lines().enumerate() {
+                    let ln = ln.trim();
+                    if ln.is_empty() {
+                        continue;
+                    }
+                    let parsed: Result<Vec<f32>, _> = ln.split(',').map(|c| c.trim().parse::<f32>()).collect();
+                    match parsed {
+                        Ok(r) => rows.push(r),
+                        Err(_) if i == 0 => skipped_header = true, // header row
+                        Err(_) => {
+                            return Ok(Some(Value::Err(Box::new(Value::Str(format!(
+                                "read_csv \"{}\": line {} is not numeric",
+                                path,
+                                i + 1
+                            ))))))
+                        }
+                    }
+                }
+                let cols = rows.first().map(|r| r.len()).unwrap_or(0);
+                if cols == 0 || rows.iter().any(|r| r.len() != cols) {
+                    return Ok(Some(Value::Err(Box::new(Value::Str(format!("read_csv \"{}\": empty or ragged rows", path))))));
+                }
+                let n = rows.len();
+                let data: Vec<f32> = rows.into_iter().flatten().collect();
+                let header = if skipped_header { " · header skipped" } else { "" };
+                self.channel.info(span, format!("csv read \"{}\" · {}×{} · {} B{}", path, n, cols, data.len() * 4, header));
+                Value::Tensor(rc_tensor(TensorData::new(vec![n, cols], data)))
             }
             #[cfg(feature = "ai")]
             "tensor" => {
@@ -1846,6 +1902,11 @@ impl Interp {
             Value::Tensor(t) => t,
             other => return Err(format!("line {}: {}(tensor) — {}", span.line, name, other.type_name())),
         };
+        Ok(self.unary_tensor_v(t, name, span, op, f))
+    }
+
+    /// Value-based variant (the argument is already evaluated).
+    fn unary_tensor_v(&mut self, t: TensorRef, name: &str, span: Span, op: GradOp, f: impl Fn(f32) -> f32) -> Value {
         let (data, shape, dev) = {
             let b = t.borrow();
             (b.data.iter().map(|x| f(*x)).collect::<Vec<f32>>(), b.shape.clone(), b.device)
@@ -1854,7 +1915,7 @@ impl Interp {
         out.device = dev;
         self.illuminate_tensor(span, &out, name);
         self.record_tape(span, &mut out, Some(GradNode { op, inputs: vec![t] }));
-        Ok(Value::Tensor(rc_tensor(out)))
+        Value::Tensor(rc_tensor(out))
     }
 
     fn matmul(&mut self, a: &Value, b: &Value, span: Span) -> Result<Value, String> {
@@ -2595,6 +2656,11 @@ fn apply_vjp(gf: &GradNode, g: &[f32]) {
             // Reshape keeps the row-major data order, so the gradient flows back unchanged (the input's
             // flat layout equals the output's). accumulate adds it onto the input's grad in input shape.
             accumulate(&gf.inputs[0], g);
+        }
+        GradOp::Sqrt => {
+            let x = gf.inputs[0].borrow().data.clone();
+            let gi: Vec<f32> = g.iter().zip(&x).map(|(gx, xi)| gx * 0.5 / xi.sqrt()).collect();
+            accumulate(&gf.inputs[0], &gi);
         }
         GradOp::Conv2d => {
             // Forward: out[i,j] = Σ x[i+p, j+q]·k[p,q] (valid cross-correlation).

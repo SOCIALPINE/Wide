@@ -26,6 +26,7 @@ fn builtin_module(name: &str) -> Option<&'static str> {
         "tensor" | "param" | "zeros" | "ones" | "matmul" | "conv2d" | "maxpool2d" | "relu" | "sigmoid"
         | "tanh" | "exp" | "log" | "softmax" | "transpose" | "grad_step" | "adam_step" => Some("ai"),
         "read_file" | "read_lines" | "write_file" | "append_file" | "remove_file" | "file_exists" => Some("fs"),
+        "read_csv" => Some("ml"),
         "heap" => Some("heap"),
         "set" => Some("set"),
         _ => None,
